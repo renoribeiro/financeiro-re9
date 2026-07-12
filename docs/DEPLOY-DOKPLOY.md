@@ -63,11 +63,20 @@ A aplicação escuta em `HOST=0.0.0.0` / `PORT=3000` (definidos no `Dockerfile`)
 
 ---
 
-## Alternativa: modo *Compose*
+## Alternativa: modo *Compose* (com labels do Traefik)
 
-Se preferir usar **Create Service → Compose**: aponte para o `docker-compose.yml`
-do repo. Ele não publica portas no host nem inclui Traefik — configure o domínio
-pela aba **Domains** do Dokploy apontando para o serviço `app` na porta `3000`.
+O `docker-compose.yml` do repo já vem no mesmo padrão do stack WAHA/Evolution:
+labels do **Traefik** com `certresolver=letsencrypt`, entrypoint `websecure` e
+`loadbalancer.server.port=3000`. O Traefik é provido pelo Dokploy (não há serviço
+Traefik no compose).
+
+1. **Create Service → Compose**, provider GitHub, repo/branch como acima.
+2. Aponte para `docker-compose.yml`.
+3. Ajuste no arquivo: o `Host(...)` para o seu domínio e mantenha os nomes de
+   router/service (`financeiro-re9`) **únicos** entre todos os apps do Traefik.
+4. **Deploy**. O Dokploy builda pelo `Dockerfile`, sobe o container e o Traefik
+   emite o SSL e roteia o domínio para a porta 3000. (Não precisa de Postgres/
+   Redis: o modo mock guarda os dados em memória.)
 
 ---
 

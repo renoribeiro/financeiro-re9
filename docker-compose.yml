@@ -1,39 +1,60 @@
 # =============================================================================
-# RE9 Finanças — Compose para o Dokploy (ou teste local).
+# RE9 Finanças — deploy no Dokploy (VPS Hostinger), modo Compose + Traefik.
 #
-# No Dokploy o proxy reverso (Traefik) e o SSL/domínio são geridos pela própria
-# plataforma — por isso NÃO há Traefik aqui e NÃO publicamos portas no host.
-# O Dokploy roteia o tráfego do domínio para a porta 3000 do serviço.
+# Mesmo padrão do seu stack WAHA/Evolution: o Traefik do Dokploy (já instalado
+# na VPS) roteia o domínio para a porta 3000 do container e emite o SSL via
+# Let's Encrypt (certresolver "letsencrypt"). Não há serviço Traefik aqui — ele
+# é provido pelo Dokploy, igual ao seu docker-compose do Evolution.
 #
-# Recomendado: usar o tipo "Application (Dockerfile)" do Dokploy (mais simples).
-# Este compose serve para o modo "Compose" do Dokploy ou para testar localmente.
+# Diferente do Evolution, a RE9 Finanças no modo atual (dados em memória) NÃO
+# precisa de Postgres/Redis nem de variáveis de ambiente obrigatórias.
 #
-# Teste local:  docker compose up --build   (com o bloco `ports` descomentado)
+# ATENCAO: ajuste o dominio abaixo e mantenha os nomes de router/service
+#          ("financeiro-re9") UNICOS entre todos os apps do seu Traefik.
 # =============================================================================
 services:
   app:
+    # O Dokploy builda a imagem a partir do Dockerfile do repositório.
     build:
       context: .
       dockerfile: Dockerfile
-    image: financeiro-re9:latest
-    restart: unless-stopped
+    # (Alternativa) usar imagem pré-buildada em vez de buildar no servidor:
+    # image: ghcr.io/renoribeiro/financeiro-re9:latest
+
+    expose:
+      - "3000"
+
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.financeiro-re9.rule=Host(`financeiro.re9imob.com.br`)
+      - traefik.http.routers.financeiro-re9.entrypoints=websecure
+      - traefik.http.routers.financeiro-re9.tls.certresolver=letsencrypt
+      - traefik.http.services.financeiro-re9.loadbalancer.server.port=3000
+
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 3000
       NITRO_PORT: 3000
-    # Variáveis das integrações externas (opcionais no modo mock atual).
-    # No Dokploy, prefira configurá-las pela UI (aba Environment) em vez de aqui.
-    # env_file:
-    #   - .env
-    expose:
-      - "3000"
-    # Descomente para rodar standalone (fora do Dokploy):
-    # ports:
-    #   - "3000:3000"
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 25s
+      # --- Integrações externas (opcionais; só ao ligar o backend real) ---
+      # Preencha na aba "Environment" do Dokploy (não versione segredos aqui).
+      # NUXT_PUBLIC_SUPABASE_URL: ${SUPABASE_URL}
+      # NUXT_PUBLIC_SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      # SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      # EVOLUTION_API_URL: https://evo.re9imob.com.br
+      # EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      # SMTP_HOST: ${SMTP_HOST}
+      # SMTP_USER: ${SMTP_USER}
+      # SMTP_PASS: ${SMTP_PASS}
+      # ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+
+    restart: unless-stopped
+
+# =============================================================================
+# Teste local (sem Dokploy/Traefik): descomente o bloco de portas e rode
+#   docker compose up --build
+# depois acesse http://localhost:3000
+# =============================================================================
+#   app:
+#     ports:
+#       - "3000:3000"
