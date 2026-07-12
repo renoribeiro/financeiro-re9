@@ -34,7 +34,7 @@ A aplicação escuta em `HOST=0.0.0.0` / `PORT=3000` (definidos no `Dockerfile`)
    ```
    Acesse o painel em `http://SEU_IP:3000` e crie o usuário admin.
 3. Um **domínio/subdomínio** apontando (registro A) para o IP da VPS, ex.:
-   `financeiro.re9imob.com.br → IP_DA_VPS`.
+   `financas.re9imob.com.br → IP_DA_VPS`.
 
 ---
 
@@ -50,7 +50,7 @@ A aplicação escuta em `HOST=0.0.0.0` / `PORT=3000` (definidos no `Dockerfile`)
 5. Aba **Environment**: adicione as variáveis que precisar (ver `.env.example`).
    No modo mock atual **nenhuma é obrigatória**. Não suba arquivo `.env`.
 6. Aba **Domains**: **Add Domain**
-   - Host: `financeiro.re9imob.com.br`
+   - Host: `financas.re9imob.com.br`
    - **Container/Service Port: `3000`**
    - Ative **HTTPS** + **Let's Encrypt** (certificado automático).
 7. (Opcional) **Advanced → Health Check** — path `/api/health`, porta `3000`.

@@ -29,7 +29,7 @@ Criar o melhor sistema de gestão financeira para imobiliárias do Brasil, unifi
 - **IA:** Claude API para importador inteligente de migração
 - **Deploy:** Docker Compose + Traefik na Hostinger VPS
 - **CI/CD:** GitHub Actions → GitHub Container Registry → VPS
-- **Domínio:** financeiro.re9imob.com.br
+- **Domínio:** financas.re9imob.com.br
 - **SSL:** Let's Encrypt via Traefik (automático)
 
 ---
@@ -765,7 +765,7 @@ notification_rules (
 
 ## 8. Infraestrutura
 
-- **Domínio:** financeiro.re9imob.com.br
+- **Domínio:** financas.re9imob.com.br
 - **Deploy:** Docker Compose + Traefik na Hostinger VPS
 - **CI/CD:** GitHub Actions → GitHub Container Registry → VPS (padrão MeMude)
 - **SSL:** Let's Encrypt via Traefik

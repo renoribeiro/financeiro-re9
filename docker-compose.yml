@@ -28,7 +28,7 @@ services:
 
     labels:
       - traefik.enable=true
-      - traefik.http.routers.financeiro-re9.rule=Host(`financeiro.re9imob.com.br`)
+      - traefik.http.routers.financeiro-re9.rule=Host(`financas.re9imob.com.br`)
       - traefik.http.routers.financeiro-re9.entrypoints=websecure
       - traefik.http.routers.financeiro-re9.tls.certresolver=letsencrypt
       - traefik.http.services.financeiro-re9.loadbalancer.server.port=3000
