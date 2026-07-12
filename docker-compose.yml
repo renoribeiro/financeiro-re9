@@ -14,12 +14,14 @@
 # =============================================================================
 services:
   app:
-    # O Dokploy builda a imagem a partir do Dockerfile do repositório.
-    build:
-      context: .
-      dockerfile: Dockerfile
-    # (Alternativa) usar imagem pré-buildada em vez de buildar no servidor:
-    # image: ghcr.io/renoribeiro/financeiro-re9:latest
+    # Puxa a imagem publicada no GitHub Packages (GHCR) — sem buildar na VPS.
+    # Publicada pelo workflow .github/workflows/publish-ghcr.yml a cada push.
+    image: ghcr.io/renoribeiro/financeiro-re9:latest
+
+    # (Alternativa) buildar na própria VPS a partir do Dockerfile do repo:
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
 
     expose:
       - "3000"
