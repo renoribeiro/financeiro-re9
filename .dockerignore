@@ -1,0 +1,39 @@
+# Contexto de build enxuto — não enviar artefatos locais/pesados ao Docker.
+# (O build gera .output/.nuxt dentro do container.)
+
+# Dependências e saídas de build
+node_modules
+.output
+.nuxt
+.nitro
+.data
+.cache
+dist
+
+# Git / CI / editores
+.git
+.github
+.gitattributes
+.vscode
+.idea
+.fleet
+
+# Documentação e testes (não necessários para o build da imagem)
+docs
+tests
+
+# Logs e temporários
+*.log
+logs
+npm-debug.log*
+.DS_Store
+
+# Arquivos de ambiente (segredos são injetados em runtime pelo Dokploy)
+.env
+.env.*
+!.env.example
+
+# Docker (evita recursão do contexto)
+Dockerfile
+.dockerignore
+docker-compose.yml

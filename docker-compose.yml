@@ -1,0 +1,39 @@
+# =============================================================================
+# RE9 Finanças — Compose para o Dokploy (ou teste local).
+#
+# No Dokploy o proxy reverso (Traefik) e o SSL/domínio são geridos pela própria
+# plataforma — por isso NÃO há Traefik aqui e NÃO publicamos portas no host.
+# O Dokploy roteia o tráfego do domínio para a porta 3000 do serviço.
+#
+# Recomendado: usar o tipo "Application (Dockerfile)" do Dokploy (mais simples).
+# Este compose serve para o modo "Compose" do Dokploy ou para testar localmente.
+#
+# Teste local:  docker compose up --build   (com o bloco `ports` descomentado)
+# =============================================================================
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: financeiro-re9:latest
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3000
+      NITRO_PORT: 3000
+    # Variáveis das integrações externas (opcionais no modo mock atual).
+    # No Dokploy, prefira configurá-las pela UI (aba Environment) em vez de aqui.
+    # env_file:
+    #   - .env
+    expose:
+      - "3000"
+    # Descomente para rodar standalone (fora do Dokploy):
+    # ports:
+    #   - "3000:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 25s
