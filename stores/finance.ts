@@ -49,6 +49,15 @@ export const useFinanceStore = defineStore('finance', {
     invoices: clone(seed.invoices) as Invoice[],
     notifications: clone(seed.notifications) as AppNotification[],
     notificationRules: clone(seed.notificationRules) as NotificationRule[],
+    // Status da integração NFS-e (carregado do servidor sob demanda). null =
+    // ainda não verificado; configured=false → emissão roda no modo simulado.
+    nfseStatus: null as null | {
+      configured: boolean
+      provider: string
+      ambiente: string
+      municipioIbge?: string
+      certificate?: { present: boolean; subjectCN?: string; holderDocument?: string; notAfter?: string; daysToExpire?: number; error?: string }
+    },
   }),
 
   getters: {
@@ -823,18 +832,32 @@ export const useFinanceStore = defineStore('finance', {
       const company = useAppStore().currentCompany
       const cfg = company.invoiceConfig
 
+      const now = new Date()
+      const competencia = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+      const issAmount = Number((r.amount * cfg.defaultIssRate / 100).toFixed(2))
+
       const inv: Invoice = {
         id: uid('inv'),
         companyId: r.companyId,
         receivableId: r.id,
         cnae: cfg.defaultCnae,
+        cnaeCode: cfg.defaultCnae.replace(/\D/g, ''),
+        lc116Item: cfg.defaultLc116Item,
+        ctiss: cfg.defaultCtiss,
         issRate: cfg.defaultIssRate,
+        issRetido: cfg.issRetidoDefault ?? false,
+        issAmount,
+        netAmount: Number((r.amount - (cfg.issRetidoDefault ? issAmount : 0)).toFixed(2)),
         serviceDescription: cfg.defaultServiceDescription,
         amount: r.amount,
+        municipioIbge: company.cityIbge ?? company.address?.cityIbge,
+        competencia,
+        rpsSeries: cfg.rpsSeries ?? '1',
+        rpsType: 1,
         takerName: r.clientName ?? '—',
         takerDocument: r.clientDocument ?? '',
         status: 'pending',
-        createdAt: new Date().toISOString(),
+        createdAt: now.toISOString(),
       }
 
       this.invoices.push(inv)
@@ -844,47 +867,243 @@ export const useFinanceStore = defineStore('finance', {
       return inv.id
     },
 
-    /** Simula a emissão junto à SEFIN (retorno com número + código). */
-    issueInvoice(id: string) {
+    /** Verifica no servidor se a emissão real (certificado A1 + SEFIN) está ativa. */
+    async loadNfseStatus(force = false) {
+      if (this.nfseStatus && !force)
+        return this.nfseStatus
+      try {
+        this.nfseStatus = await $fetch('/api/nfse/status')
+      }
+      catch {
+        this.nfseStatus = { configured: false, provider: 'ginfes', ambiente: 'homologacao' }
+      }
+
+      return this.nfseStatus
+    },
+
+    /** Próximo número de RPS por empresa (monotônico). */
+    nextRpsNumber(companyId: string): string {
+      const base = useAppStore().companyById(companyId)?.type === 'agency' ? 311 : 143
+      const nums = this.invoices
+        .filter(i => i.companyId === companyId && i.rpsNumber)
+        .map(i => Number(i.rpsNumber))
+        .filter(n => !Number.isNaN(n))
+
+      return String(Math.max(base, ...nums) + 1).padStart(6, '0')
+    },
+
+    /** Monta o corpo da requisição de emissão a partir da nota + empresa. */
+    buildEmitirRequest(inv: Invoice) {
+      const company = useAppStore().companyById(inv.companyId)
+
+      return {
+        company: {
+          cnpj: company?.cnpj ?? '',
+          municipalRegistration: company?.municipalRegistration,
+          razaoSocial: company?.name ?? '',
+          nomeFantasia: company?.tradeName,
+          cnaeCode: inv.cnaeCode ?? company?.mainCnae?.replace(/\D/g, ''),
+          cityIbge: company?.cityIbge ?? company?.address?.cityIbge,
+          optanteSimplesNacional: company?.taxRegime === 'simples_nacional',
+          address: company?.address
+            ? {
+                logradouro: company.address.street,
+                numero: company.address.number,
+                complemento: company.address.complement,
+                bairro: company.address.neighborhood,
+                cidadeIbge: company.address.cityIbge,
+                uf: company.address.state,
+                cep: company.address.zipCode,
+              }
+            : undefined,
+        },
+        invoice: {
+          rpsNumber: inv.rpsNumber ?? '',
+          rpsSeries: inv.rpsSeries ?? '1',
+          rpsType: inv.rpsType ?? 1,
+          dataEmissao: new Date().toISOString(),
+          competencia: inv.competencia,
+          lc116Item: inv.lc116Item ?? '',
+          ctiss: inv.ctiss,
+          cnaeCode: inv.cnaeCode,
+          issRate: inv.issRate,
+          issRetido: inv.issRetido ?? false,
+          serviceDescription: inv.serviceDescription,
+          amount: inv.amount,
+          deductionsAmount: inv.deductionsAmount,
+          municipioIbge: inv.municipioIbge,
+          taker: {
+            name: inv.takerName,
+            document: inv.takerDocument,
+            email: inv.takerEmail,
+            address: inv.takerAddress
+              ? {
+                  logradouro: inv.takerAddress.street,
+                  numero: inv.takerAddress.number,
+                  complemento: inv.takerAddress.complement,
+                  bairro: inv.takerAddress.neighborhood,
+                  cidadeIbge: inv.takerAddress.cityIbge,
+                  uf: inv.takerAddress.state,
+                  cep: inv.takerAddress.zipCode,
+                }
+              : undefined,
+          },
+        },
+      }
+    },
+
+    /**
+     * Emite a NFS-e. Se a integração real estiver configurada (certificado A1 +
+     * SEFIN Fortaleza), chama o backend; caso contrário, usa emissão simulada.
+     */
+    async issueInvoice(id: string) {
       if (!this.canWrite())
         return
       const inv = this.invoices.find(x => x.id === id)
       if (!inv || inv.status === 'issued')
         return
 
-      // numeração POR EMPRESA e monotônica: próximo = max(nº emitidos da empresa, base) + 1
-      const base = useAppStore().companyById(inv.companyId)?.type === 'agency' ? 311 : 143
+      if (!inv.rpsNumber)
+        inv.rpsNumber = this.nextRpsNumber(inv.companyId)
+      inv.series = inv.rpsSeries ?? '1'
 
-      const issuedNums = this.invoices
-        .filter(i => i.companyId === inv.companyId && i.status === 'issued' && i.invoiceNumber)
-        .map(i => Number(i.invoiceNumber))
-        .filter(n => !Number.isNaN(n))
+      const status = await this.loadNfseStatus()
 
-      const seq = String(Math.max(base, ...issuedNums) + 1).padStart(6, '0')
+      // ---- Modo simulado (sem certificado configurado) -----------------------
+      if (!status?.configured) {
+        const seq = this.nextRpsNumber(inv.companyId)
+        inv.status = 'issued'
+        inv.invoiceNumber = seq
+        inv.verificationCode = `${Math.random().toString(36).slice(2, 6)}-${Math.random().toString(36).slice(2, 6)}`.toUpperCase()
+        inv.issuedAt = new Date().toISOString()
+        inv.environment = 'homologacao'
+        inv.errorMessage = undefined
+        this.notify({ type: 'invoice_issued', title: 'NFS-e emitida (simulada)', message: `NFS-e ${seq} emitida para ${inv.takerName}.`, channel: 'dashboard', severity: 'success' })
+        this.logAudit('emit_invoice', 'invoice', `NFS-e ${seq} emitida (simulada) para ${inv.takerName}`, inv.id)
 
-      inv.status = 'issued'
-      inv.invoiceNumber = seq
-      inv.series = '1'
-      inv.verificationCode = `${Math.random().toString(36).slice(2, 6)}-${Math.random().toString(36).slice(2, 6)}`.toUpperCase()
-      inv.issuedAt = new Date().toISOString()
+        return
+      }
+
+      // ---- Emissão real (SEFIN Fortaleza) ------------------------------------
+      inv.status = 'processing'
       inv.errorMessage = undefined
-      this.notify({ type: 'invoice_issued', title: 'NFS-e emitida', message: `NFS-e ${seq} emitida para ${inv.takerName}.`, channel: 'dashboard', severity: 'success' })
-      this.logAudit('emit_invoice', 'invoice', `NFS-e ${seq} emitida para ${inv.takerName}`, inv.id)
+      try {
+        const res = await $fetch('/api/nfse/emitir', { method: 'POST', body: this.buildEmitirRequest(inv) })
+
+        if (res.success && res.status === 'issued') {
+          inv.status = 'issued'
+          inv.invoiceNumber = res.invoiceNumber
+          inv.verificationCode = res.verificationCode
+          inv.protocol = res.protocol
+          inv.issuedAt = res.issuedAt ?? new Date().toISOString()
+          inv.publicUrl = res.publicUrl
+          inv.xmlBase64 = res.xmlBase64
+          inv.environment = res.environment
+          this.notify({ type: 'invoice_issued', title: 'NFS-e emitida', message: `NFS-e ${res.invoiceNumber} emitida para ${inv.takerName}.`, channel: 'dashboard', severity: 'success' })
+          this.logAudit('emit_invoice', 'invoice', `NFS-e ${res.invoiceNumber} emitida (SEFIN ${res.environment}) para ${inv.takerName}`, inv.id)
+        }
+        else {
+          inv.status = 'error'
+          inv.protocol = res.protocol
+          inv.errorMessage = (res.errors ?? []).map(e => `${e.code ? `[${e.code}] ` : ''}${e.message}`).join(' · ') || 'Falha na emissão.'
+          this.notify({ type: 'invoice_error', title: 'Erro na emissão da NFS-e', message: inv.errorMessage, channel: 'dashboard', severity: 'error' })
+          this.logAudit('emit_invoice', 'invoice', `Erro ao emitir NFS-e para ${inv.takerName}: ${inv.errorMessage}`, inv.id)
+        }
+      }
+      catch (e) {
+        inv.status = 'error'
+        inv.errorMessage = (e as Error).message || 'Falha de comunicação com o servidor.'
+        this.notify({ type: 'invoice_error', title: 'Erro na emissão da NFS-e', message: inv.errorMessage, channel: 'dashboard', severity: 'error' })
+      }
     },
 
-    cancelInvoice(id: string) {
+    /** Reconsulta uma NFS-e que ficou "em processamento" na SEFIN. */
+    async consultInvoice(id: string) {
+      const inv = this.invoices.find(x => x.id === id)
+      if (!inv?.rpsNumber)
+        return
+      const status = await this.loadNfseStatus()
+      if (!status?.configured)
+        return
+
+      try {
+        const res = await $fetch('/api/nfse/consultar', {
+          method: 'POST',
+          body: {
+            company: { cnpj: useAppStore().companyById(inv.companyId)?.cnpj, municipalRegistration: useAppStore().companyById(inv.companyId)?.municipalRegistration, cityIbge: inv.municipioIbge },
+            rpsNumber: inv.rpsNumber,
+            rpsSeries: inv.rpsSeries ?? '1',
+            rpsType: inv.rpsType ?? 1,
+          },
+        })
+        if (res.success && res.status === 'issued') {
+          inv.status = 'issued'
+          inv.invoiceNumber = res.invoiceNumber
+          inv.verificationCode = res.verificationCode
+          inv.issuedAt = res.issuedAt ?? new Date().toISOString()
+          inv.publicUrl = res.publicUrl
+          inv.xmlBase64 = res.xmlBase64
+          inv.environment = res.environment
+          this.notify({ type: 'invoice_issued', title: 'NFS-e localizada', message: `NFS-e ${res.invoiceNumber} confirmada para ${inv.takerName}.`, channel: 'dashboard', severity: 'success' })
+        }
+      }
+      catch { /* mantém o status atual */ }
+    },
+
+    async cancelInvoice(id: string, reason?: string) {
       if (!this.canWrite())
         return
       const inv = this.invoices.find(x => x.id === id)
-      if (inv) {
+      if (!inv)
+        return
+
+      const status = await this.loadNfseStatus()
+
+      // Modo simulado ou nota ainda não emitida na SEFIN.
+      if (!status?.configured || !inv.invoiceNumber || inv.environment === 'homologacao' && !inv.protocol) {
         inv.status = 'cancelled'
         inv.cancelledAt = new Date().toISOString()
+        inv.cancelReason = reason
         this.logAudit('cancel_invoice', 'invoice', `NFS-e cancelada para ${inv.takerName}`, inv.id)
+
+        return
+      }
+
+      try {
+        const res = await $fetch('/api/nfse/cancelar', {
+          method: 'POST',
+          body: {
+            company: { cnpj: useAppStore().companyById(inv.companyId)?.cnpj, municipalRegistration: useAppStore().companyById(inv.companyId)?.municipalRegistration, cityIbge: inv.municipioIbge },
+            numeroNfse: inv.invoiceNumber,
+            codigoMunicipio: inv.municipioIbge,
+            codigoCancelamento: '1',
+            motivo: reason,
+          },
+        })
+        if (res.success) {
+          inv.status = 'cancelled'
+          inv.cancelledAt = res.cancelledAt ?? new Date().toISOString()
+          inv.cancelReason = reason
+          this.logAudit('cancel_invoice', 'invoice', `NFS-e ${inv.invoiceNumber} cancelada na SEFIN para ${inv.takerName}`, inv.id)
+        }
+        else {
+          inv.errorMessage = (res.errors ?? []).map(e => e.message).join(' · ') || 'Falha no cancelamento.'
+          this.notify({ type: 'invoice_error', title: 'Erro ao cancelar NFS-e', message: inv.errorMessage, channel: 'dashboard', severity: 'error' })
+        }
+      }
+      catch (e) {
+        inv.errorMessage = (e as Error).message
+        this.notify({ type: 'invoice_error', title: 'Erro ao cancelar NFS-e', message: inv.errorMessage, channel: 'dashboard', severity: 'error' })
       }
     },
 
     retryInvoice(id: string) {
-      this.issueInvoice(id)
+      const inv = this.invoices.find(x => x.id === id)
+      // Se ficou em processamento na SEFIN, reconsulta; senão reenvia.
+      if (inv?.status === 'processing' || (inv?.status === 'error' && inv.protocol))
+        return this.consultInvoice(id)
+
+      return this.issueInvoice(id)
     },
 
     // ---- notificações --------------------------------------------------------

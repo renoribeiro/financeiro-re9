@@ -43,6 +43,7 @@ export const installmentStatusMeta = meta({
 
 export const invoiceStatusMeta = meta({
   pending: { label: 'Pendente', color: 'warning' },
+  processing: { label: 'Processando', color: 'info' },
   issued: { label: 'Emitida', color: 'success' },
   cancelled: { label: 'Cancelada', color: 'secondary' },
   error: { label: 'Com erro', color: 'error' },

@@ -22,12 +22,18 @@ export interface Company {
   creci?: string
   city: string
   state: string
+  cityIbge?: string // código IBGE do município do prestador (Fortaleza = 2304400)
+  address?: FiscalAddress // endereço fiscal do prestador (usado no XML da NFS-e)
   logoColor: string
   certificateExpiry?: string
   invoiceConfig: {
     defaultCnae: string
     defaultIssRate: number
     defaultServiceDescription: string
+    defaultLc116Item?: string // item da LC 116 padrão para os serviços da empresa
+    defaultCtiss?: string // Código de Tributação do ISS de Fortaleza padrão
+    issRetidoDefault?: boolean // ISS retido por padrão
+    rpsSeries?: string // série do RPS (padrão '1')
   }
 }
 
@@ -307,24 +313,73 @@ export interface CommissionSplit {
 
 // 👉 Notas Fiscais (NFS-e) ----------------------------------------------------
 
-export type InvoiceStatus = 'pending' | 'issued' | 'cancelled' | 'error'
+export type InvoiceStatus = 'pending' | 'processing' | 'issued' | 'cancelled' | 'error'
+
+/** Ambiente de emissão fiscal (SEFIN). */
+export type NfseEnvironment = 'homologacao' | 'producao'
+
+/** Endereço (usado no tomador da NFS-e; opcional). */
+export interface FiscalAddress {
+  street?: string
+  number?: string
+  complement?: string
+  neighborhood?: string
+  cityName?: string
+  cityIbge?: string // código IBGE do município (ex.: Fortaleza = 2304400)
+  state?: string // UF
+  zipCode?: string // CEP (só dígitos)
+}
 
 export interface Invoice {
   id: string
   companyId: string
   receivableId?: string
+
+  // Identificação da NFS-e emitida
   invoiceNumber?: string
   series?: string
   verificationCode?: string
+
+  // RPS (Recibo Provisório de Serviços) que origina a NFS-e
+  rpsNumber?: string
+  rpsSeries?: string
+  rpsType?: number // 1 = RPS
+
+  // Dados fiscais do serviço
   cnae: string
+  lc116Item?: string // item da Lista de Serviços (LC 116/2003), ex.: '10.05'
+  ctiss?: string // Código de Tributação do ISS do Município (Fortaleza)
+  cnaeCode?: string // CNAE sem máscara
   issRate: number
+  issRetido?: boolean // ISS retido na fonte pelo tomador
   serviceDescription: string
   amount: number
+  deductionsAmount?: number // deduções da base de cálculo
+  issAmount?: number // valor do ISS calculado
+  netAmount?: number // valor líquido
+
+  // Município de incidência (IBGE) e competência
+  municipioIbge?: string
+  competencia?: string // AAAA-MM da competência
+
+  // Tomador
   takerName: string
   takerDocument: string
   takerEmail?: string
+  takerAddress?: FiscalAddress
+
+  // Protocolo / retorno da SEFIN
+  protocol?: string
+  environment?: NfseEnvironment
+
+  // Artefatos
+  xmlBase64?: string // XML autorizado (retorno)
+  pdfUrl?: string // link/URL do DANFSE
+  publicUrl?: string // link de consulta pública da NFS-e
+
   status: InvoiceStatus
   errorMessage?: string
+  cancelReason?: string
   issuedAt?: string
   cancelledAt?: string
   createdAt: string

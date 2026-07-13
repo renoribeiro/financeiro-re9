@@ -8,6 +8,11 @@ const app = useAppStore()
 
 useHead({ title: 'Notas Fiscais (NFS-e)' })
 
+// Verifica se a emissão real (certificado A1 + SEFIN Fortaleza) está ativa.
+onMounted(() => finance.loadNfseStatus())
+const nfse = computed(() => finance.nfseStatus)
+const cert = computed(() => nfse.value?.certificate)
+
 const search = ref('')
 const statusFilter = ref<'all' | InvoiceStatus>('all')
 
@@ -33,10 +38,27 @@ const totalIssued = computed(() => issued.value.reduce((acc, i) => acc + i.amoun
 const statusOptions = [
   { title: 'Todos', value: 'all' },
   { title: 'Pendente', value: 'pending' },
+  { title: 'Processando', value: 'processing' },
   { title: 'Emitida', value: 'issued' },
   { title: 'Cancelada', value: 'cancelled' },
   { title: 'Com erro', value: 'error' },
 ]
+
+// 👉 Download do XML autorizado (base64 → arquivo)
+function downloadXml(inv: Invoice) {
+  if (!inv.xmlBase64)
+    return
+  const bytes = atob(inv.xmlBase64)
+  const buf = new Uint8Array(bytes.length)
+  for (let i = 0; i < bytes.length; i++)
+    buf[i] = bytes.charCodeAt(i)
+  const url = URL.createObjectURL(new Blob([buf], { type: 'application/xml' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `nfse-${inv.invoiceNumber ?? inv.rpsNumber ?? inv.id}.xml`
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 const headers = [
   { title: 'Número', key: 'invoiceNumber' },
@@ -86,15 +108,64 @@ function doCancel() {
       icon="ri-file-text-line"
     />
 
+    <!-- Integração ativa (certificado A1 + SEFIN Fortaleza) -->
     <VAlert
+      v-if="nfse?.configured"
+      type="success"
+      variant="tonal"
+      density="comfortable"
+      class="mb-3"
+      icon="ri-shield-check-line"
+    >
+      Emissão real conectada à SEFIN Fortaleza
+      <strong>({{ nfse.ambiente === 'producao' ? 'Produção' : 'Homologação' }})</strong>
+      via {{ nfse.provider === 'nacional' ? 'NFS-e Nacional' : 'webservice GINFES' }}.
+      <template v-if="cert?.subjectCN">
+        Certificado: {{ cert.subjectCN }}<template v-if="cert.daysToExpire != null"> · vence em {{ cert.daysToExpire }} dia(s)</template>.
+      </template>
+    </VAlert>
+
+    <!-- Certificado presente porém inválido -->
+    <VAlert
+      v-else-if="cert?.present && cert?.error"
+      type="error"
+      variant="tonal"
+      density="comfortable"
+      class="mb-3"
+      icon="ri-error-warning-line"
+    >
+      Certificado A1 configurado, mas inválido: {{ cert.error }}
+    </VAlert>
+
+    <!-- Modo simulado (sem certificado) -->
+    <VAlert
+      v-else
       type="info"
       variant="tonal"
       density="comfortable"
-      class="mb-6"
+      class="mb-3"
       icon="ri-information-line"
     >
-      Emissão simulada — integração real com SEFIN Fortaleza será conectada no backend.
+      Emissão <strong>simulada</strong> — envie o certificado digital A1 e as variáveis da SEFIN no
+      servidor para ativar a emissão real. Veja <code>docs/NFSE-FORTALEZA.md</code>.
     </VAlert>
+
+    <!-- Aviso de validade do certificado -->
+    <VAlert
+      v-if="nfse?.configured && cert?.daysToExpire != null && cert.daysToExpire <= 30"
+      type="warning"
+      variant="tonal"
+      density="comfortable"
+      class="mb-6"
+      icon="ri-calendar-close-line"
+    >
+      O certificado digital vence em {{ cert.daysToExpire }} dia(s). Renove-o para não interromper a emissão.
+    </VAlert>
+    <div
+      v-else
+      class="mb-6"
+    />
+
 
     <VRow class="match-height mb-1">
       <VCol
@@ -245,6 +316,27 @@ function doCancel() {
               </VTooltip>
             </IconBtn>
 
+            <VProgressCircular
+              v-if="item.status === 'processing'"
+              indeterminate
+              size="18"
+              width="2"
+              color="info"
+              class="mx-2"
+            />
+            <IconBtn
+              v-if="item.status === 'processing'"
+              @click="finance.consultInvoice(item.id)"
+            >
+              <VIcon icon="ri-refresh-line" />
+              <VTooltip
+                activator="parent"
+                location="top"
+              >
+                Atualizar situação na SEFIN
+              </VTooltip>
+            </IconBtn>
+
             <IconBtn
               v-if="item.status === 'error' && !app.isReadOnly"
               @click="retry(item)"
@@ -341,6 +433,16 @@ function doCancel() {
               title="Emissão"
               :subtitle="formatDateTime(detail.issuedAt)"
             />
+            <VListItem
+              v-if="detail.environment"
+              title="Ambiente"
+              :subtitle="detail.environment === 'producao' ? 'Produção' : 'Homologação'"
+            />
+            <VListItem
+              v-if="detail.protocol"
+              title="Protocolo"
+              :subtitle="detail.protocol"
+            />
           </VList>
 
           <VDivider class="my-3" />
@@ -349,22 +451,29 @@ function doCancel() {
             <VBtn
               variant="tonal"
               color="error"
-              prepend-icon="ri-file-pdf-line"
-              disabled
+              prepend-icon="ri-external-link-line"
+              :href="detail.publicUrl"
+              target="_blank"
+              rel="noopener"
+              :disabled="!detail.publicUrl"
             >
-              Baixar PDF
+              Consulta pública
             </VBtn>
             <VBtn
               variant="tonal"
               color="info"
               prepend-icon="ri-code-line"
-              disabled
+              :disabled="!detail.xmlBase64"
+              @click="downloadXml(detail)"
             >
               Baixar XML
             </VBtn>
           </div>
-          <div class="text-caption text-disabled mt-2">
-            Downloads disponíveis após a integração real com a SEFIN.
+          <div
+            v-if="!detail.xmlBase64 && !detail.publicUrl"
+            class="text-caption text-disabled mt-2"
+          >
+            Downloads disponíveis para notas emitidas na SEFIN (modo real).
           </div>
         </VCardText>
         <VCardText class="d-flex justify-end pt-0">

@@ -50,4 +50,63 @@ import DefaultLayoutWithVerticalNav from './components/DefaultLayoutWithVertical
     padding-inline-start: 0;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Contraste do tooltip dos gráficos (ApexCharts).
+// O ApexCharts injeta o tooltip FORA do componente Vue (anexado ao
+// `.apexcharts-canvas`) com o tema "light" padrão: caixa branca, mas SEM cor
+// de texto explícita — o texto herda a cor da página. No modo escuro isso dá
+// texto claro sobre fundo branco = ilegível. O override adaptativo do tema
+// (@core/scss/.../apex-chart.scss) vem pelo `css:` array do nuxt.config, que é
+// inlinado no SSR e NÃO chega ao cliente — então some na navegação SPA.
+// Repetimos a regra aqui (folha do layout, entregue ao cliente) usando as
+// variáveis do Vuetify, corrigindo em light e dark, em todos os gráficos.
+.apexcharts-canvas {
+  .apexcharts-tooltip,
+  .apexcharts-tooltip.apexcharts-theme-light,
+  .apexcharts-tooltip.apexcharts-theme-dark {
+    border-color: rgba(var(--v-border-color), var(--v-border-opacity));
+    background: rgb(var(--v-theme-surface));
+    color: rgba(var(--v-theme-on-surface), var(--v-high-emphasis-opacity));
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.16);
+  }
+
+  .apexcharts-tooltip-title {
+    border-color: rgba(var(--v-border-color), var(--v-border-opacity));
+    background: rgb(var(--v-theme-surface));
+    color: rgba(var(--v-theme-on-surface), var(--v-high-emphasis-opacity));
+    font-weight: 500;
+  }
+
+  .apexcharts-tooltip-text,
+  .apexcharts-tooltip-text-y-label,
+  .apexcharts-tooltip-text-y-value,
+  .apexcharts-tooltip-text-goals-label,
+  .apexcharts-tooltip-text-goals-value,
+  .apexcharts-tooltip-marker + .apexcharts-tooltip-text {
+    color: rgba(var(--v-theme-on-surface), var(--v-high-emphasis-opacity));
+  }
+
+  // Tooltip dos eixos (x/y) — mesma lógica de contraste.
+  .apexcharts-xaxistooltip,
+  .apexcharts-yaxistooltip {
+    border-color: rgba(var(--v-border-color), var(--v-border-opacity));
+    background: rgb(var(--v-theme-surface));
+    color: rgba(var(--v-theme-on-surface), var(--v-high-emphasis-opacity));
+  }
+
+  .apexcharts-xaxistooltip-text,
+  .apexcharts-yaxistooltip-text {
+    color: rgba(var(--v-theme-on-surface), var(--v-high-emphasis-opacity));
+  }
+
+  // As "setinhas" (arrows) dos tooltips de eixo herdam a cor de fundo.
+  .apexcharts-xaxistooltip-bottom::before {
+    border-bottom-color: rgba(var(--v-border-color), var(--v-border-opacity));
+  }
+
+  .apexcharts-xaxistooltip-bottom::after {
+    border-bottom-color: rgb(var(--v-theme-surface));
+  }
+}
 </style>

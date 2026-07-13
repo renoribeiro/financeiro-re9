@@ -48,3 +48,11 @@ public/mockServiceWorker.js
 # Env files
 .env*
 !.env.example
+
+# Certificados digitais (NUNCA versionar) — A1/A3, chaves e segredos
+*.pfx
+*.p12
+*.pem
+*.key
+*.cer
+*.crt

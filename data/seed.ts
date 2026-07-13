@@ -66,12 +66,27 @@ export const companies: Company[] = [
     creci: 'CRECI-CE 24868',
     city: 'Fortaleza',
     state: 'CE',
+    cityIbge: '2304400',
+    address: {
+      street: 'Av. Dom Luís',
+      number: '1200',
+      complement: 'Sala 1601',
+      neighborhood: 'Aldeota',
+      cityName: 'Fortaleza',
+      cityIbge: '2304400',
+      state: 'CE',
+      zipCode: '60160230',
+    },
     logoColor: 'primary',
     certificateExpiry: d(210),
     invoiceConfig: {
       defaultCnae: '6821-8/01',
       defaultIssRate: 2,
       defaultServiceDescription: 'Intermediação imobiliária — comissão de corretagem',
+      defaultLc116Item: '10.05', // Agenciamento, corretagem/intermediação de bens imóveis
+      defaultCtiss: '1005-0/01',
+      issRetidoDefault: false,
+      rpsSeries: '1',
     },
   },
   {
@@ -86,12 +101,27 @@ export const companies: Company[] = [
     taxRegime: 'simples_nacional',
     city: 'Fortaleza',
     state: 'CE',
+    cityIbge: '2304400',
+    address: {
+      street: 'Av. Santos Dumont',
+      number: '3131',
+      complement: 'Sala 908',
+      neighborhood: 'Aldeota',
+      cityName: 'Fortaleza',
+      cityIbge: '2304400',
+      state: 'CE',
+      zipCode: '60150162',
+    },
     logoColor: 'info',
     certificateExpiry: d(40), // certificado vencendo em breve (alerta)
     invoiceConfig: {
       defaultCnae: '7311-4/00',
       defaultIssRate: 5,
       defaultServiceDescription: 'Serviços de marketing digital e gestão de mídias',
+      defaultLc116Item: '17.06', // Propaganda e publicidade, planejamento de campanhas
+      defaultCtiss: '1706-0/01',
+      issRetidoDefault: false,
+      rpsSeries: '1',
     },
   },
 ]
