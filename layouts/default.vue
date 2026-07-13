@@ -52,6 +52,20 @@ import DefaultLayoutWithVerticalNav from './components/DefaultLayoutWithVertical
 }
 
 // ---------------------------------------------------------------------------
+// Filtros VBtnToggle com rótulos de texto (Todos/Ativos/Inativos, Fornecedor/
+// Colaborador etc.). O template Materio força `inline-size` fixa (36px em
+// density compact, 52px normal) em TODO `.v-btn-toggle .v-btn`, supondo toggles
+// só-ícone — o que espreme os botões e SOBREPÕE os rótulos de texto. Aqui
+// liberamos a largura para o conteúdo. A classe repetida eleva a especificidade
+// (0,4,0) para vencer a regra `!important` do template (body ... = 0,3,1),
+// independente da ordem de carga.
+.v-btn-toggle.v-btn-toggle .v-btn.v-btn {
+  inline-size: auto !important;
+  min-inline-size: 2.75rem !important;
+  padding-inline: 1rem !important;
+}
+
+// ---------------------------------------------------------------------------
 // Contraste do tooltip dos gráficos (ApexCharts).
 // O ApexCharts injeta o tooltip FORA do componente Vue (anexado ao
 // `.apexcharts-canvas`) com o tema "light" padrão: caixa branca, mas SEM cor
