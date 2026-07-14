@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useFinanceStore } from '@/stores/finance'
 import { useAppStore } from '@/stores/app'
+import { isWithin, type DateWindow } from '@/utils/dateFilter'
 import type { Sale } from '@/types/finance'
 
 const finance = useFinanceStore()
@@ -19,12 +20,18 @@ const visibleSales = computed(() =>
     : finance.companySales,
 )
 
+// 👉 Filtro de período (afeta KPIs + tabela)
+const periodWindow = ref<DateWindow>({ start: null, end: null })
+const filteredSales = computed(() =>
+  visibleSales.value.filter(s => isWithin(s.saleDate, periodWindow.value)),
+)
+
 // 👉 KPIs
-const totalSales = computed(() => visibleSales.value.length)
-const totalVgv = computed(() => visibleSales.value.reduce((acc, s) => acc + s.saleValue, 0))
+const totalSales = computed(() => filteredSales.value.length)
+const totalVgv = computed(() => filteredSales.value.reduce((acc, s) => acc + s.saleValue, 0))
 
 const totalCommission = computed(() =>
-  visibleSales.value.reduce((acc, s) => {
+  filteredSales.value.reduce((acc, s) => {
     const c = finance.commissionOfSale(s.id)
 
     return acc + (c?.totalAmount ?? 0)
@@ -168,9 +175,13 @@ function openDetails(s: Sale) {
       </VRow>
 
       <VCard>
+        <VCardText class="d-flex flex-wrap align-center gap-3">
+          <PeriodRangeFilter v-model="periodWindow" />
+        </VCardText>
+        <VDivider />
         <VDataTable
           :headers="headers"
-          :items="visibleSales"
+          :items="filteredSales"
           :items-per-page="10"
           item-value="id"
           class="text-no-wrap"

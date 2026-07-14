@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useFinanceStore } from '@/stores/finance'
 import { useAppStore } from '@/stores/app'
+import { inMonth } from '@/utils/dateFilter'
 import type { Payable } from '@/types/finance'
 
 const finance = useFinanceStore()
@@ -11,14 +12,18 @@ useHead({ title: 'Contas a Pagar' })
 const search = ref('')
 const statusFilter = ref<string>('all')
 const costCenterFilter = ref<string | null>(null)
+const monthFilter = ref('all')
+
+const dueDates = computed(() => finance.companyPayables.map(p => p.dueDate))
 
 const filtered = computed(() => finance.companyPayables.filter(p => {
   const text = `${p.description} ${finance.supplierName(p.supplierId)} ${finance.employeeName(p.employeeId)}`.toLowerCase()
   const okSearch = !search.value || text.includes(search.value.toLowerCase())
   const okStatus = statusFilter.value === 'all' || p.status === statusFilter.value
   const okCC = !costCenterFilter.value || p.costCenterId === costCenterFilter.value
+  const okMonth = inMonth(p.dueDate, monthFilter.value)
 
-  return okSearch && okStatus && okCC
+  return okSearch && okStatus && okCC && okMonth
 }).sort((a, b) => a.dueDate.localeCompare(b.dueDate)))
 
 const open = computed(() => finance.companyPayables.filter(p => p.status === 'open'))
@@ -256,6 +261,10 @@ function runRecurrences() {
           label="Centro de custo"
           style="max-inline-size: 240px;"
           clearable
+        />
+        <MonthFilter
+          v-model="monthFilter"
+          :dates="dueDates"
         />
       </VCardText>
       <VDivider />

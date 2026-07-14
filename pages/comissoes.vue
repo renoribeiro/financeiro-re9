@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useFinanceStore } from '@/stores/finance'
 import { useAppStore } from '@/stores/app'
+import { isWithin, type DateWindow } from '@/utils/dateFilter'
 import type { Commission } from '@/types/finance'
 
 const finance = useFinanceStore()
@@ -20,16 +21,23 @@ const rows = computed(() => finance.companyCommissions.map(c => {
     broker: finance.employeeName(sale?.brokerId),
     installments: insts.length,
     receivedAmount,
+    saleDate: sale?.saleDate ?? c.createdAt,
   }
 }))
 
-const totalGenerated = computed(() => rows.value.reduce((s, c) => s + c.totalAmount, 0))
-const totalReceived = computed(() => rows.value.reduce((s, c) => s + c.receivedAmount, 0))
+// 👉 Filtro de período (pela data da venda; afeta KPIs + tabela)
+const periodWindow = ref<DateWindow>({ start: null, end: null })
+const filteredRows = computed(() =>
+  rows.value.filter(r => isWithin(r.saleDate, periodWindow.value)),
+)
+
+const totalGenerated = computed(() => filteredRows.value.reduce((s, c) => s + c.totalAmount, 0))
+const totalReceived = computed(() => filteredRows.value.reduce((s, c) => s + c.receivedAmount, 0))
 const totalPending = computed(() => totalGenerated.value - totalReceived.value)
 
 const totalBrokerPayouts = computed(() =>
   finance.commissionSplits
-    .filter(sp => finance.companyCommissions.some(c => c.id === sp.commissionId) && sp.beneficiaryType === 'broker' && sp.status === 'pending')
+    .filter(sp => filteredRows.value.some(c => c.id === sp.commissionId) && sp.beneficiaryType === 'broker' && sp.status === 'pending')
     .reduce((s, sp) => s + sp.amount, 0),
 )
 
@@ -144,9 +152,13 @@ function paySplit(payableId?: string) {
       </VRow>
 
       <VCard>
+        <VCardText class="d-flex flex-wrap align-center gap-3">
+          <PeriodRangeFilter v-model="periodWindow" />
+        </VCardText>
+        <VDivider />
         <VDataTable
           :headers="headers"
-          :items="rows"
+          :items="filteredRows"
           :items-per-page="10"
           item-value="id"
           class="text-no-wrap"

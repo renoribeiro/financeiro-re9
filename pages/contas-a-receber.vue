@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useFinanceStore } from '@/stores/finance'
 import { useAppStore } from '@/stores/app'
+import { inMonth } from '@/utils/dateFilter'
 import type { Receivable } from '@/types/finance'
 
 const finance = useFinanceStore()
@@ -11,14 +12,18 @@ useHead({ title: 'Contas a Receber' })
 const search = ref('')
 const statusFilter = ref('all')
 const ruleFilter = ref<string | null>(null)
+const monthFilter = ref('all')
+
+const dueDates = computed(() => finance.companyReceivables.map(r => r.dueDate))
 
 const filtered = computed(() => finance.companyReceivables.filter(r => {
   const text = `${r.description} ${r.clientName ?? ''}`.toLowerCase()
   const okSearch = !search.value || text.includes(search.value.toLowerCase())
   const okStatus = statusFilter.value === 'all' || r.status === statusFilter.value
   const okRule = !ruleFilter.value || r.invoiceRule === ruleFilter.value
+  const okMonth = inMonth(r.dueDate, monthFilter.value)
 
-  return okSearch && okStatus && okRule
+  return okSearch && okStatus && okRule && okMonth
 }).sort((a, b) => a.dueDate.localeCompare(b.dueDate)))
 
 const open = computed(() => finance.companyReceivables.filter(r => r.status === 'open'))
@@ -206,6 +211,10 @@ const invoiceOf = (receivableId: string) => finance.companyInvoices.find(i => i.
           label="Regra NFS-e"
           style="max-inline-size: 200px;"
           clearable
+        />
+        <MonthFilter
+          v-model="monthFilter"
+          :dates="dueDates"
         />
       </VCardText>
       <VDivider />
