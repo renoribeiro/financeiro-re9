@@ -9,6 +9,7 @@ import NavbarThemeSwitcher from '@/layouts/components/NavbarThemeSwitcher.vue'
 import UserProfile from '@/layouts/components/UserProfile.vue'
 import CompanySelector from '@/layouts/components/CompanySelector.vue'
 import NavbarNotifications from '@/layouts/components/NavbarNotifications.vue'
+import CashBalanceBadge from '@/layouts/components/CashBalanceBadge.vue'
 </script>
 
 <template>
@@ -27,6 +28,9 @@ import NavbarNotifications from '@/layouts/components/NavbarNotifications.vue'
 
         <!-- 👉 Seletor de empresa (multi-tenant) -->
         <CompanySelector />
+
+        <!-- 👉 Saldo em caixa — sempre visível -->
+        <CashBalanceBadge class="ms-4 d-none d-sm-flex" />
 
         <VSpacer />
 

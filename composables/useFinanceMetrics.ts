@@ -28,6 +28,12 @@ export function useFinanceMetrics() {
     return d >= monthStart.value && d <= new Date()
   }
 
+  // 👉 Saldo em caixa (realizado acumulado): todas as entradas menos saídas já
+  // realizadas da empresa atual. É o dinheiro efetivamente em caixa hoje.
+  const cashBalance = computed(() =>
+    finance.companyTransactions.reduce((s, t) => s + (t.type === 'income' ? t.amount : -t.amount), 0),
+  )
+
   // 👉 Realizado no mês (transações)
   const realized = computed(() => {
     const tx = finance.companyTransactions.filter(t => inCurrentMonth(t.date))
@@ -156,6 +162,7 @@ export function useFinanceMetrics() {
   })
 
   return {
+    cashBalance,
     realized,
     weekPayables,
     weekReceivables,

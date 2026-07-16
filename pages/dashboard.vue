@@ -12,6 +12,11 @@ const vuetifyTheme = useTheme()
 
 useHead({ title: 'Dashboard' })
 
+// 👉 Saldo em caixa (realizado acumulado) — informação principal
+const saldoCaixa = computed(() => m.cashBalance.value)
+const totalIncome = computed(() => finance.companyTransactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0))
+const totalExpense = computed(() => finance.companyTransactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0))
+
 // 👉 KPIs principais
 const kpis = computed(() => [
   { title: 'Saldo realizado (mês)', value: formatBRL(m.realized.value.balance), icon: 'ri-wallet-3-line', color: m.realized.value.balance >= 0 ? 'success' : 'error', subtitle: `Entradas ${formatBRLCompact(m.realized.value.income)} · Saídas ${formatBRLCompact(m.realized.value.expense)}` },
@@ -80,6 +85,54 @@ const chartSeries = computed(() => [
       :subtitle="`${appStore.currentCompany.tradeName} · visão geral financeira`"
       icon="ri-dashboard-line"
     />
+
+    <!-- 👉 Saldo em caixa — informação principal -->
+    <VCard
+      :color="saldoCaixa >= 0 ? 'success' : 'error'"
+      class="mb-6"
+    >
+      <VCardText class="d-flex flex-wrap align-center justify-space-between gap-4">
+        <div class="d-flex align-center gap-4">
+          <VAvatar
+            size="56"
+            variant="tonal"
+            color="white"
+          >
+            <VIcon
+              icon="ri-wallet-3-line"
+              size="30"
+            />
+          </VAvatar>
+          <div>
+            <div class="text-body-1 text-white" style="opacity: 0.9;">
+              Saldo em caixa
+            </div>
+            <div class="text-h3 font-weight-bold text-white">
+              {{ formatBRL(saldoCaixa) }}
+            </div>
+          </div>
+        </div>
+        <div class="d-flex gap-6 text-white">
+          <div>
+            <div class="text-caption" style="opacity: 0.85;">
+              Entradas (total)
+            </div>
+            <div class="text-h6 font-weight-medium">
+              {{ formatBRL(totalIncome) }}
+            </div>
+          </div>
+          <VDivider vertical class="border-opacity-50" />
+          <div>
+            <div class="text-caption" style="opacity: 0.85;">
+              Saídas (total)
+            </div>
+            <div class="text-h6 font-weight-medium">
+              {{ formatBRL(totalExpense) }}
+            </div>
+          </div>
+        </div>
+      </VCardText>
+    </VCard>
 
     <!-- KPIs -->
     <VRow class="match-height">
