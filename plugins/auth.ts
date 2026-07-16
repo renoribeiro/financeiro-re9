@@ -1,10 +1,39 @@
-import { useAuthStore } from '@/stores/auth'
+import { useAppStore } from '@/stores/app'
+import { useFinanceStore } from '@/stores/finance'
 
-// Restaura a sessão a partir do cookie no boot (server E client), para que o
-// estado de autenticação seja idêntico nos dois lados e não haja mismatch de
-// hidratação. O cookie é definido/limpo no login/logout (páginas).
-export default defineNuxtPlugin(() => {
-  const session = useCookie<string | null>('re9_session', { sameSite: 'lax' })
-  if (session.value)
-    useAuthStore().setUser(session.value)
+// ============================================================================
+// Hidratação: ao ter um usuário autenticado (Supabase), carrega TODOS os dados
+// das empresas dele e popula os stores. Roda no boot e reage a login/logout.
+// ============================================================================
+export default defineNuxtPlugin(async () => {
+  const user = useSupabaseUser()
+  const app = useAppStore()
+  const finance = useFinanceStore()
+
+  async function hydrate() {
+    try {
+      const data = await loadAppData()
+      if (data) {
+        app.hydrate(data)
+        finance.hydrate(data.finance)
+      }
+    }
+    catch (e) {
+      console.error('Falha ao carregar dados do Supabase:', e)
+    }
+  }
+
+  if (user.value)
+    await hydrate()
+
+  if (import.meta.client) {
+    watch(user, async (u) => {
+      if (u)
+        await hydrate()
+      else {
+        app.reset()
+        finance.reset()
+      }
+    })
+  }
 })

@@ -13,6 +13,15 @@ WORKDIR /app
 
 # ---- build ----
 FROM base AS build
+# O módulo @nuxtjs/supabase exige SUPABASE_URL/KEY já no build. A URL e a
+# publishable key são públicas (embarcam no bundle do cliente por design), então
+# ficam aqui como defaults do projeto — sobrescrevíveis por build-arg. Em runtime
+# o Dokploy injeta as mesmas variáveis (usadas pelo cliente server-side).
+ARG SUPABASE_URL=https://nzrwlmjhbbmqlwfxqgsd.supabase.co
+ARG SUPABASE_KEY=sb_publishable_rc8lyNUz0iQz5GUwuAfr7g_AAptJiKa
+ENV SUPABASE_URL=$SUPABASE_URL
+ENV SUPABASE_KEY=$SUPABASE_KEY
+
 # Copiamos TODO o código antes do install de propósito: o script `postinstall`
 # roda `nuxt prepare` + `build:icons`, que geram plugins/iconify/icons.css a
 # partir do código-fonte. Instalar antes de copiar o código quebraria o build.

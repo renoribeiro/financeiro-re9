@@ -1,42 +1,42 @@
 import { defineStore } from 'pinia'
 import { useAppStore } from './app'
-import { users as seedUsers } from '@/data/seed'
+import { useFinanceStore } from './finance'
 
 // ============================================================================
-// Sessão de autenticação. No mock, valida o e-mail contra os usuários do seed
-// (a senha é aceita como demo). A sessão é persistida em COOKIE (via useCookie
-// no plugin/páginas) para que SSR e cliente concordem — evita mismatch de
-// hidratação. Ao ligar o Supabase Auth, trocar por sessão real mantendo esta
-// mesma interface (isAuthenticated / setUser / clear).
+// Autenticação real via Supabase Auth. A sessão (cookie) é gerida pelo módulo
+// @nuxtjs/supabase; aqui expomos apenas login/logout. O estado "autenticado"
+// vem de `useSupabaseUser()` (usado no middleware e na hidratação).
 // ============================================================================
 
 export const useAuthStore = defineStore('auth', {
-  state: () => ({
-    userId: null as string | null,
-  }),
-
-  getters: {
-    isAuthenticated: state => !!state.userId,
-  },
-
   actions: {
-    /** Ativa a sessão de um usuário (usado no restore por cookie e no login). */
-    setUser(id: string): boolean {
-      if (!seedUsers.some(u => u.id === id))
-        return false
-      this.userId = id
-      useAppStore().setUser(id)
-
-      return true
+    async login(email: string, password: string) {
+      const supabase = useSupabaseClient()
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      })
+      if (error)
+        throw error
     },
 
-    /** Valida o e-mail (mock). Retorna o id do usuário ou null. */
-    resolveByEmail(email: string): string | null {
-      return seedUsers.find(u => u.email.toLowerCase() === email.trim().toLowerCase())?.id ?? null
+    async register(email: string, password: string, fullName?: string) {
+      const supabase = useSupabaseClient()
+      const { error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: { data: { full_name: fullName } },
+      })
+      if (error)
+        throw error
     },
 
-    clear() {
-      this.userId = null
+    async logout() {
+      const supabase = useSupabaseClient()
+      await supabase.auth.signOut()
+      useAppStore().reset()
+      useFinanceStore().reset()
+      await navigateTo('/login')
     },
   },
 })

@@ -1,19 +1,17 @@
-import { useAuthStore } from '@/stores/auth'
-
 // ============================================================================
 // Proteção de rota: usuários não autenticados só acessam login/register.
-// Roda em SSR e cliente (a sessão vem do cookie restaurado no plugin auth),
-// então não há mismatch de hidratação.
+// O estado de autenticação vem da sessão do Supabase (useSupabaseUser),
+// restaurada do cookie tanto no SSR quanto no cliente.
 // ============================================================================
 
 const publicPages = new Set(['/login', '/register'])
 
 export default defineNuxtRouteMiddleware(to => {
-  const auth = useAuthStore()
+  const user = useSupabaseUser()
 
-  if (!auth.isAuthenticated && !publicPages.has(to.path))
+  if (!user.value && !publicPages.has(to.path))
     return navigateTo('/login')
 
-  if (auth.isAuthenticated && publicPages.has(to.path))
+  if (user.value && publicPages.has(to.path))
     return navigateTo('/dashboard')
 })

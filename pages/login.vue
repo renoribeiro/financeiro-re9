@@ -9,7 +9,6 @@ import authV1Tree from '@images/pages/auth-v1-tree.png'
 
 const auth = useAuthStore()
 const router = useRouter()
-const session = useCookie<string | null>('re9_session', { sameSite: 'lax' })
 
 const form = ref({
   email: '',
@@ -18,17 +17,23 @@ const form = ref({
 })
 
 const error = ref<string | null>(null)
+const loading = ref(false)
 
-function onSubmit() {
-  const id = auth.resolveByEmail(form.value.email)
-  if (!id) {
-    error.value = 'E-mail não encontrado. Use um usuário cadastrado.'
-
-    return
+async function onSubmit() {
+  error.value = null
+  loading.value = true
+  try {
+    await auth.login(form.value.email, form.value.password)
+    await router.push('/dashboard')
   }
-  session.value = id
-  auth.setUser(id)
-  router.push('/dashboard')
+  catch (e) {
+    error.value = (e as Error).message === 'Invalid login credentials'
+      ? 'E-mail ou senha inválidos.'
+      : (e as Error).message || 'Não foi possível entrar.'
+  }
+  finally {
+    loading.value = false
+  }
 }
 
 const vuetifyTheme = useTheme()
@@ -136,14 +141,10 @@ definePageMeta({ layout: 'blank' })
               <VBtn
                 block
                 type="submit"
+                :loading="loading"
               >
                 Entrar
               </VBtn>
-
-              <p class="text-caption text-disabled text-center mt-3 mb-0">
-                Demo: reno@re9.online (Super Admin), financeiro@re9imob.com.br,
-                lucas@re9imob.com.br (Corretor) ou contador@re9.online — qualquer senha.
-              </p>
             </VCol>
 
             <!-- criar conta -->

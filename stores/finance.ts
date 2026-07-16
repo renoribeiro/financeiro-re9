@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 import { useAppStore } from './app'
 import { useAuditStore } from './audit'
-import * as seed from '@/data/seed'
 import type {
   AppNotification,
   ChartAccount,
@@ -28,27 +27,26 @@ import type {
 // Getters são SEMPRE escopados pela empresa atual (simula RLS multi-tenant).
 // ============================================================================
 
-const clone = <T>(v: T): T => structuredClone(v)
-
 export const useFinanceStore = defineStore('finance', {
   state: () => ({
-    chartAccounts: clone(seed.chartAccounts) as ChartAccount[],
-    costCenters: clone(seed.costCenters) as CostCenter[],
-    suppliers: clone(seed.suppliers) as Supplier[],
-    employees: clone(seed.employees) as Employee[],
-    payables: clone(seed.payables) as Payable[],
-    receivables: clone(seed.receivables) as Receivable[],
-    transactions: clone(seed.transactions) as Transaction[],
-    developments: clone(seed.developments) as Development[],
-    sales: clone(seed.sales) as Sale[],
-    funnelCards: clone(seed.funnelCards) as FunnelCard[],
+    // Populado a partir do Supabase (ver hydrate). Vazio até a hidratação.
+    chartAccounts: [] as ChartAccount[],
+    costCenters: [] as CostCenter[],
+    suppliers: [] as Supplier[],
+    employees: [] as Employee[],
+    payables: [] as Payable[],
+    receivables: [] as Receivable[],
+    transactions: [] as Transaction[],
+    developments: [] as Development[],
+    sales: [] as Sale[],
+    funnelCards: [] as FunnelCard[],
     funnelHistory: [] as FunnelHistory[],
-    commissions: clone(seed.commissions) as Commission[],
-    commissionInstallments: clone(seed.commissionInstallments) as CommissionInstallment[],
-    commissionSplits: clone(seed.commissionSplits) as CommissionSplit[],
-    invoices: clone(seed.invoices) as Invoice[],
-    notifications: clone(seed.notifications) as AppNotification[],
-    notificationRules: clone(seed.notificationRules) as NotificationRule[],
+    commissions: [] as Commission[],
+    commissionInstallments: [] as CommissionInstallment[],
+    commissionSplits: [] as CommissionSplit[],
+    invoices: [] as Invoice[],
+    notifications: [] as AppNotification[],
+    notificationRules: [] as NotificationRule[],
     // Status da integração NFS-e (carregado do servidor sob demanda). null =
     // ainda não verificado; configured=false → emissão roda no modo simulado.
     nfseStatus: null as null | {
@@ -167,6 +165,28 @@ export const useFinanceStore = defineStore('finance', {
   },
 
   actions: {
+    // ---- hidratação (Supabase) ----------------------------------------------
+
+    /** Popula os dados financeiros a partir do que foi carregado do Supabase. */
+    hydrate(data: Record<string, unknown[]>) {
+      this.chartAccounts = (data.chartAccounts ?? []) as ChartAccount[]
+      this.costCenters = (data.costCenters ?? []) as CostCenter[]
+      this.suppliers = (data.suppliers ?? []) as Supplier[]
+      this.employees = (data.employees ?? []) as Employee[]
+      this.developments = (data.developments ?? []) as Development[]
+      this.sales = (data.sales ?? []) as Sale[]
+      this.commissions = (data.commissions ?? []) as Commission[]
+      this.commissionInstallments = (data.commissionInstallments ?? []) as CommissionInstallment[]
+      this.commissionSplits = (data.commissionSplits ?? []) as CommissionSplit[]
+      this.payables = (data.payables ?? []) as Payable[]
+      this.receivables = (data.receivables ?? []) as Receivable[]
+      this.transactions = (data.transactions ?? []) as Transaction[]
+    },
+
+    reset() {
+      this.$reset()
+    },
+
     // ---- helpers -------------------------------------------------------------
 
     /** Recalcula o status "overdue" ⇆ "open" conforme a data de vencimento. */

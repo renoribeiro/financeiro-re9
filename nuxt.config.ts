@@ -124,6 +124,13 @@ export default defineNuxtConfig({
     transpile: ['vuetify'],
   },
 
-  modules: ['@vueuse/nuxt', '@nuxtjs/device', '@pinia/nuxt'],
+  modules: ['@vueuse/nuxt', '@nuxtjs/device', '@pinia/nuxt', '@nuxtjs/supabase'],
+
+  // Supabase: desligamos o redirect automático do módulo — a proteção de rotas
+  // é feita pelo middleware da própria aplicação (stores/app + auth guard).
+  supabase: {
+    redirect: false,
+  },
+
   compatibilityDate: '2025-01-01',
 })

@@ -21,7 +21,9 @@
   "dependencies": {
     "@floating-ui/dom": "1.6.8",
     "@iconify-json/bxl": "^1.1.10",
+    "@nuxtjs/supabase": "^2.0.9",
     "@stylistic/stylelint-config": "^1.0.1",
+    "@supabase/supabase-js": "^2.110.7",
     "@vueuse/core": "^10.11.1",
     "@vueuse/math": "^10.11.1",
     "@xmldom/xmldom": "^0.9.10",

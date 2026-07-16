@@ -4,13 +4,9 @@ import { useAuthStore } from '@/stores/auth'
 
 const appStore = useAppStore()
 const auth = useAuthStore()
-const router = useRouter()
-const session = useCookie<string | null>('re9_session', { sameSite: 'lax' })
 
-function logout() {
-  session.value = null
-  auth.clear()
-  router.push('/login')
+async function logout() {
+  await auth.logout()
 }
 
 const initials = computed(() =>
@@ -74,33 +70,6 @@ const initials = computed(() =>
             </VListItemTitle>
             <VListItemSubtitle>{{ roleLabels[appStore.currentRole] }}</VListItemSubtitle>
           </VListItem>
-          <VDivider class="my-2" />
-
-          <!-- 👉 Trocar usuário (demo de perfis) -->
-          <VListSubheader>Acessar como</VListSubheader>
-          <VListItem
-            v-for="u in appStore.users"
-            :key="u.id"
-            :active="u.id === appStore.currentUserId"
-            @click="appStore.setUser(u.id)"
-          >
-            <template #prepend>
-              <VAvatar
-                size="30"
-                variant="tonal"
-                :color="u.avatarColor"
-                class="me-2"
-              >
-                <VIcon
-                  icon="ri-user-line"
-                  size="18"
-                />
-              </VAvatar>
-            </template>
-            <VListItemTitle>{{ u.fullName }}</VListItemTitle>
-            <VListItemSubtitle>{{ roleLabels[(u.roles.find(r => r.companyId === appStore.currentCompanyId) ?? u.roles[0]).role] }}</VListItemSubtitle>
-          </VListItem>
-
           <VDivider class="my-2" />
 
           <!-- 👉 Configurações -->

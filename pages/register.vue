@@ -8,8 +8,6 @@ import authV1Tree2 from '@images/pages/auth-v1-tree-2.png'
 import authV1Tree from '@images/pages/auth-v1-tree.png'
 
 const auth = useAuthStore()
-const router = useRouter()
-const session = useCookie<string | null>('re9_session', { sameSite: 'lax' })
 
 const form = ref({
   username: '',
@@ -18,14 +16,24 @@ const form = ref({
   privacyPolicies: false,
 })
 
-// No mock não há criação real de usuário: entra como Super Admin de demonstração.
-// (Ao ligar o Supabase Auth, trocar por signUp real — ver docs/MELHORIAS.)
-function onSubmit() {
-  const id = auth.resolveByEmail('reno@re9.online')!
+const error = ref<string | null>(null)
+const message = ref<string | null>(null)
+const loading = ref(false)
 
-  session.value = id
-  auth.setUser(id)
-  router.push('/dashboard')
+async function onSubmit() {
+  error.value = null
+  message.value = null
+  loading.value = true
+  try {
+    await auth.register(form.value.email, form.value.password, form.value.username)
+    message.value = 'Conta criada! Se a confirmação por e-mail estiver ativa, confirme pelo link enviado; depois faça login.'
+  }
+  catch (e) {
+    error.value = (e as Error).message || 'Não foi possível criar a conta.'
+  }
+  finally {
+    loading.value = false
+  }
 }
 
 const vuetifyTheme = useTheme()
@@ -77,6 +85,18 @@ definePageMeta({ layout: 'blank' })
       <VCardText>
         <VForm @submit.prevent="onSubmit">
           <VRow>
+            <VCol
+              v-if="error || message"
+              cols="12"
+              class="pb-0"
+            >
+              <VAlert
+                :type="error ? 'error' : 'success'"
+                variant="tonal"
+                density="compact"
+                :text="error || message || ''"
+              />
+            </VCol>
             <!-- Nome -->
             <VCol cols="12">
               <VTextField
@@ -127,6 +147,7 @@ definePageMeta({ layout: 'blank' })
               <VBtn
                 block
                 type="submit"
+                :loading="loading"
               >
                 Cadastrar
               </VBtn>
