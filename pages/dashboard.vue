@@ -88,7 +88,8 @@ const chartSeries = computed(() => [
 
     <!-- 👉 Saldo em caixa — informação principal -->
     <VCard
-      :color="saldoCaixa >= 0 ? 'success' : 'error'"
+      color="primary"
+      variant="tonal"
       class="mb-6"
     >
       <VCardText class="d-flex flex-wrap align-center justify-space-between gap-4">
@@ -96,7 +97,7 @@ const chartSeries = computed(() => [
           <VAvatar
             size="56"
             variant="tonal"
-            color="white"
+            color="primary"
           >
             <VIcon
               icon="ri-wallet-3-line"
@@ -104,29 +105,32 @@ const chartSeries = computed(() => [
             />
           </VAvatar>
           <div>
-            <div class="text-body-1 text-white" style="opacity: 0.9;">
+            <div class="text-body-1 text-medium-emphasis">
               Saldo em caixa
             </div>
-            <div class="text-h3 font-weight-bold text-white">
+            <div
+              class="text-h3 font-weight-bold"
+              :class="saldoCaixa >= 0 ? 'text-primary' : 'text-error'"
+            >
               {{ formatBRL(saldoCaixa) }}
             </div>
           </div>
         </div>
-        <div class="d-flex gap-6 text-white">
+        <div class="d-flex gap-6">
           <div>
-            <div class="text-caption" style="opacity: 0.85;">
+            <div class="text-caption text-medium-emphasis">
               Entradas (total)
             </div>
-            <div class="text-h6 font-weight-medium">
+            <div class="text-h6 font-weight-medium text-success">
               {{ formatBRL(totalIncome) }}
             </div>
           </div>
-          <VDivider vertical class="border-opacity-50" />
+          <VDivider vertical />
           <div>
-            <div class="text-caption" style="opacity: 0.85;">
+            <div class="text-caption text-medium-emphasis">
               Saídas (total)
             </div>
-            <div class="text-h6 font-weight-medium">
+            <div class="text-h6 font-weight-medium text-error">
               {{ formatBRL(totalExpense) }}
             </div>
           </div>
