@@ -12,7 +12,20 @@ useHead({ title: 'Comissões' })
 const rows = computed(() => finance.companyCommissions.map(c => {
   const sale = finance.saleById(c.saleId)
   const insts = finance.installmentsOf(c.id)
-  const receivedAmount = insts.filter(i => i.status === 'received').reduce((s, i) => s + i.amount, 0)
+
+  const receivedAmount = insts.reduce((sum, installment) => {
+    const receivable = finance.receivables.find(r => r.id === installment.receivableId)
+
+    return sum + (receivable?.receivedAmount ?? (installment.status === 'received' ? installment.amount : 0))
+  }, 0)
+
+  const receivedDates = [...new Set(insts.flatMap(installment => {
+    const settlementDates = installment.receivableId
+      ? finance.receiptsOf(installment.receivableId).map(receipt => receipt.settledAt)
+      : []
+
+    return [...settlementDates, ...(installment.receivedDate ? [installment.receivedDate] : [])]
+  }))].sort((a, b) => b.localeCompare(a))
 
   return {
     ...c,
@@ -21,6 +34,8 @@ const rows = computed(() => finance.companyCommissions.map(c => {
     broker: finance.employeeName(sale?.brokerId),
     installments: insts.length,
     receivedAmount,
+    receivedDates,
+    receivedDate: receivedDates[0],
     saleDate: sale?.saleDate ?? c.createdAt,
   }
 }))
@@ -47,6 +62,7 @@ const headers = [
   { title: 'Modelo', key: 'receiptType' },
   { title: 'Comissão total', key: 'totalAmount', align: 'end' as const },
   { title: 'Recebido', key: 'receivedAmount', align: 'end' as const },
+  { title: 'Data de recebimento', key: 'receivedDate' },
   { title: 'Parcelas', key: 'installments', align: 'center' as const },
   { title: 'Status', key: 'status' },
   { title: '', key: 'actions', sortable: false, align: 'end' as const },
@@ -80,6 +96,89 @@ function receiveInstallment(receivableId?: string) {
 function paySplit(payableId?: string) {
   if (payableId)
     finance.payPayable(payableId)
+}
+
+const editDialog = ref(false)
+const editFormRef = ref()
+const saving = ref(false)
+const formError = ref('')
+
+const editForm = ref({
+  id: '',
+  totalAmount: 0,
+  receiptType: 'launch_passthrough',
+  installments: 1,
+  firstDueDate: todayISO(),
+  managerPct: 0,
+  captadorPct: 0,
+  notes: '',
+})
+
+const receiptTypeOptions = Object.entries(receiptTypeLabels).map(([value, title]) => ({ value, title }))
+
+function openEdit(c: Commission) {
+  const installments = finance.installmentsOf(c.id)
+  const splits = finance.splitsOf(c.id)
+
+  editForm.value = {
+    id: c.id,
+    totalAmount: c.totalAmount,
+    receiptType: c.receiptType,
+    installments: Math.max(1, installments.length),
+    firstDueDate: installments[0]?.expectedDate ?? todayISO(),
+    managerPct: splits.find(sp => sp.beneficiaryType === 'manager')?.percentage ?? 0,
+    captadorPct: splits.find(sp => sp.beneficiaryType === 'captador')?.percentage ?? 0,
+    notes: c.notes ?? '',
+  }
+  formError.value = ''
+  dialog.value = false
+  editDialog.value = true
+}
+
+async function saveCommission() {
+  const { valid } = await editFormRef.value.validate()
+  if (!valid)
+    return
+  saving.value = true
+  formError.value = ''
+  try {
+    await finance.updateCommission({
+      ...editForm.value,
+      totalAmount: Number(editForm.value.totalAmount),
+      installments: Number(editForm.value.installments),
+      managerPct: Number(editForm.value.managerPct),
+      captadorPct: Number(editForm.value.captadorPct),
+    })
+    editDialog.value = false
+  }
+  catch (error) {
+    formError.value = (error as Error).message
+  }
+  finally {
+    saving.value = false
+  }
+}
+
+const deleteDialog = ref(false)
+const deleteTarget = ref<Commission | null>(null)
+const deleteError = ref('')
+
+function askDelete(c: Commission) {
+  deleteTarget.value = c
+  deleteError.value = ''
+  deleteDialog.value = true
+}
+
+async function confirmDelete() {
+  if (!deleteTarget.value)
+    return
+  try {
+    await finance.deleteCommission(deleteTarget.value.id)
+    deleteTarget.value = null
+  }
+  catch (error) {
+    deleteError.value = (error as Error).message
+  }
 }
 </script>
 
@@ -189,6 +288,19 @@ function paySplit(payableId?: string) {
           <template #item.receivedAmount="{ item }">
             {{ formatBRL(item.receivedAmount) }}
           </template>
+          <template #item.receivedDate="{ item }">
+            <span v-if="item.receivedDate">{{ formatDate(item.receivedDate) }}</span>
+            <span
+              v-else
+              class="text-disabled"
+            >—</span>
+            <div
+              v-if="item.receivedDates.length > 1"
+              class="text-caption text-disabled"
+            >
+              +{{ item.receivedDates.length - 1 }} recebimento(s)
+            </div>
+          </template>
           <template #item.installments="{ item }">
             {{ item.installments }}
           </template>
@@ -199,13 +311,38 @@ function paySplit(payableId?: string) {
             />
           </template>
           <template #item.actions="{ item }">
-            <VBtn
-              size="small"
-              variant="tonal"
-              @click="openDetail(item)"
-            >
-              Detalhes
-            </VBtn>
+            <div class="d-flex justify-end ga-1">
+              <IconBtn
+                aria-label="Ver detalhes da comissão"
+                @click="openDetail(item)"
+              >
+                <VIcon icon="ri-eye-line" />
+                <VTooltip activator="parent">
+                  Detalhes
+                </VTooltip>
+              </IconBtn>
+              <IconBtn
+                v-if="app.canManageFinance"
+                aria-label="Editar comissão"
+                @click="openEdit(item)"
+              >
+                <VIcon icon="ri-pencil-line" />
+                <VTooltip activator="parent">
+                  Editar
+                </VTooltip>
+              </IconBtn>
+              <IconBtn
+                v-if="app.isAdmin"
+                aria-label="Excluir comissão"
+                color="error"
+                @click="askDelete(item)"
+              >
+                <VIcon icon="ri-delete-bin-line" />
+                <VTooltip activator="parent">
+                  Excluir
+                </VTooltip>
+              </IconBtn>
+            </div>
           </template>
         </VDataTable>
       </VCard>
@@ -393,6 +530,15 @@ function paySplit(payableId?: string) {
         <VDivider />
         <VCardText class="d-flex justify-end">
           <VBtn
+            v-if="app.canManageFinance"
+            variant="tonal"
+            class="me-3"
+            prepend-icon="ri-pencil-line"
+            @click="current && openEdit(current)"
+          >
+            Editar
+          </VBtn>
+          <VBtn
             variant="tonal"
             color="secondary"
             @click="dialog = false"
@@ -402,5 +548,153 @@ function paySplit(payableId?: string) {
         </VCardText>
       </VCard>
     </VDialog>
+
+    <VDialog
+      v-model="editDialog"
+      max-width="680"
+      persistent
+    >
+      <VCard>
+        <VCardItem>
+          <VCardTitle>Editar comissão</VCardTitle>
+          <VCardSubtitle>As parcelas e contas a receber serão sincronizadas automaticamente.</VCardSubtitle>
+        </VCardItem>
+        <VCardText>
+          <VAlert
+            type="info"
+            variant="tonal"
+            density="compact"
+            class="mb-4"
+            text="Comissões já recebidas ou com repasses pagos exigem estorno/reabertura antes da edição."
+          />
+          <VAlert
+            v-if="formError"
+            type="error"
+            variant="tonal"
+            density="compact"
+            class="mb-4"
+            :text="formError"
+          />
+          <VForm
+            ref="editFormRef"
+            @submit.prevent="saveCommission"
+          >
+            <VRow>
+              <VCol
+                cols="12"
+                md="6"
+              >
+                <VTextField
+                  v-model.number="editForm.totalAmount"
+                  label="Comissão total"
+                  type="number"
+                  prefix="R$"
+                  :rules="[requiredRule, positiveRule]"
+                />
+              </VCol>
+              <VCol
+                cols="12"
+                md="6"
+              >
+                <VSelect
+                  v-model="editForm.receiptType"
+                  label="Modelo de recebimento"
+                  :items="receiptTypeOptions"
+                  :rules="[requiredRule]"
+                />
+              </VCol>
+              <VCol
+                cols="12"
+                md="4"
+              >
+                <VTextField
+                  v-model.number="editForm.installments"
+                  label="Parcelas"
+                  type="number"
+                  min="1"
+                  max="120"
+                  :rules="[requiredRule, positiveRule]"
+                />
+              </VCol>
+              <VCol
+                cols="12"
+                md="8"
+              >
+                <VTextField
+                  v-model="editForm.firstDueDate"
+                  label="Primeiro vencimento"
+                  type="date"
+                  :rules="[requiredRule]"
+                />
+              </VCol>
+              <VCol
+                cols="12"
+                md="6"
+              >
+                <VTextField
+                  v-model.number="editForm.managerPct"
+                  label="Gerente (%)"
+                  type="number"
+                  min="0"
+                  max="100"
+                />
+              </VCol>
+              <VCol
+                cols="12"
+                md="6"
+              >
+                <VTextField
+                  v-model.number="editForm.captadorPct"
+                  label="Captador (%)"
+                  type="number"
+                  min="0"
+                  max="100"
+                />
+              </VCol>
+              <VCol cols="12">
+                <VTextarea
+                  v-model="editForm.notes"
+                  label="Observações"
+                  rows="2"
+                />
+              </VCol>
+            </VRow>
+          </VForm>
+        </VCardText>
+        <VCardText class="d-flex justify-end gap-3 pt-0">
+          <VBtn
+            variant="tonal"
+            color="secondary"
+            @click="editDialog = false"
+          >
+            Cancelar
+          </VBtn>
+          <VBtn
+            :loading="saving"
+            @click="saveCommission"
+          >
+            Salvar alterações
+          </VBtn>
+        </VCardText>
+      </VCard>
+    </VDialog>
+
+    <VAlert
+      v-if="deleteError"
+      type="error"
+      variant="tonal"
+      closable
+      class="mt-4"
+      :text="deleteError"
+      @click:close="deleteError = ''"
+    />
+    <ConfirmDialog
+      v-model="deleteDialog"
+      title="Excluir comissão"
+      confirm-text="Excluir"
+      confirm-color="error"
+      message="A comissão, suas parcelas e contas vinculadas ainda não liquidadas serão removidas. Registros com recebimentos ou pagamentos exigem estorno prévio. Deseja continuar?"
+      @confirm="confirmDelete"
+    />
   </div>
 </template>

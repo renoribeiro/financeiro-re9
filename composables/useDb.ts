@@ -433,20 +433,37 @@ export function useDb() {
       }) as Promise<Development>
     },
 
-    saveSale(input: Partial<Sale>) {
-      return saveRow('sales', input.id, {
-        development_id: input.developmentId,
-        unit: input.unit,
-        sale_value: input.saleValue,
-        buyer_name: input.buyerName,
-        buyer_document: input.buyerDocument,
-        buyer_contact: input.buyerContact,
-        payment_method: input.paymentMethod,
-        broker_id: input.brokerId,
-        sale_date: input.saleDate,
-        status: input.status,
-        notes: input.notes,
-      }) as Promise<Sale>
+    async saveSale(
+      input: Partial<Sale>,
+      generateCommission = true,
+      options: { installments?: number; managerPct?: number; captadorPct?: number } = {},
+    ) {
+      const { data, error } = await db.rpc('save_sale_with_commission', {
+        target_id: input.id ?? null,
+        payload: {
+          companyId: companyId(),
+          developmentId: input.developmentId,
+          unit: input.unit,
+          saleValue: input.saleValue,
+          buyerName: input.buyerName,
+          buyerDocument: input.buyerDocument,
+          buyerContact: input.buyerContact,
+          paymentMethod: input.paymentMethod,
+          brokerId: input.brokerId,
+          saleDate: input.saleDate,
+          status: input.status,
+          notes: input.notes,
+        },
+        generate_commission: generateCommission,
+        installment_count: options.installments ?? 1,
+        manager_percentage: options.managerPct ?? 0,
+        captador_percentage: options.captadorPct ?? 0,
+      })
+
+      if (error)
+        throw new Error(error.message)
+
+      return camelize(data as Record<string, unknown>) as unknown as Sale
     },
 
     async generateCommissionForSale(
@@ -460,6 +477,49 @@ export function useDb() {
         captador_percentage: options.captadorPct ?? 0,
       })
 
+      if (error)
+        throw new Error(error.message)
+
+      return data as string
+    },
+
+    async updateCommission(input: {
+      id: string
+      totalAmount: number
+      receiptType: string
+      installments: number
+      firstDueDate: string
+      managerPct?: number
+      captadorPct?: number
+      notes?: string
+    }) {
+      const { data, error } = await db.rpc('update_commission_entry', {
+        target_id: input.id,
+        total_amount: input.totalAmount,
+        receipt_type: input.receiptType,
+        installment_count: input.installments,
+        first_due_date: input.firstDueDate,
+        manager_percentage: input.managerPct ?? 0,
+        captador_percentage: input.captadorPct ?? 0,
+        commission_notes: input.notes,
+      })
+
+      if (error)
+        throw new Error(error.message)
+
+      return data as string
+    },
+
+    async deleteCommission(id: string) {
+      const { data, error } = await db.rpc('delete_commission_entry', { target_id: id })
+      if (error)
+        throw new Error(error.message)
+
+      return data as string
+    },
+
+    async deleteSale(id: string) {
+      const { data, error } = await db.rpc('delete_sale_entry', { target_id: id })
       if (error)
         throw new Error(error.message)
 

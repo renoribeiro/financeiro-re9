@@ -170,7 +170,7 @@ const unread = computed(() => financeStore.unreadNotificationCount)
   <VerticalNavLink
     v-if="appStore.canManageFinance"
     :item="{
-      title: 'Auditoria',
+      title: 'Histórico',
       icon: 'ri-history-line',
       to: '/auditoria',
     }"

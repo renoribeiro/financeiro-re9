@@ -792,24 +792,64 @@ export const useFinanceStore = defineStore('finance', {
     ) {
       if (!this.canWrite())
         return s.id
-      const saved = await useDb().saveSale(s)
+      const saved = await useDb().saveSale(s, generateCommission, commissionOpts)
       const index = this.sales.findIndex(item => item.id === saved.id)
       if (index >= 0)
         this.sales[index] = saved
       else
         this.sales.unshift(saved)
 
-      if (!s.id && generateCommission) {
-        await useDb().generateCommissionForSale(saved.id, commissionOpts)
-
+      if (generateCommission) {
         const refreshed = await loadAppData()
         if (refreshed)
           this.hydrate(refreshed.finance)
       }
       if (!s.id)
         this.logAudit('create', 'sale', `Venda registrada: ${saved.buyerName} — ${formatBRL(saved.saleValue)}`, saved.id)
+      else
+        this.logAudit('update', 'sale', `Venda atualizada: ${saved.buyerName} — ${formatBRL(saved.saleValue)}`, saved.id)
 
       return saved.id
+    },
+
+    async deleteSale(id: string) {
+      if (!useAppStore().isAdmin)
+        return
+      await useDb().deleteSale(id)
+
+      const refreshed = await loadAppData()
+      if (refreshed)
+        this.hydrate(refreshed.finance)
+    },
+
+    async updateCommission(input: {
+      id: string
+      totalAmount: number
+      receiptType: string
+      installments: number
+      firstDueDate: string
+      managerPct?: number
+      captadorPct?: number
+      notes?: string
+    }) {
+      if (!useAppStore().canManageFinance)
+        return
+      const id = await useDb().updateCommission(input)
+      const refreshed = await loadAppData()
+      if (refreshed)
+        this.hydrate(refreshed.finance)
+
+      return id
+    },
+
+    async deleteCommission(id: string) {
+      if (!useAppStore().isAdmin)
+        return
+      await useDb().deleteCommission(id)
+
+      const refreshed = await loadAppData()
+      if (refreshed)
+        this.hydrate(refreshed.finance)
     },
 
     // ---- funil ---------------------------------------------------------------

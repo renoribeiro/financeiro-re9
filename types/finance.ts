@@ -64,6 +64,8 @@ export interface AuditEntry {
   entityId?: string
   description: string
   createdAt: string
+  oldData?: Record<string, unknown>
+  newData?: Record<string, unknown>
 }
 
 // 👉 Financeiro ---------------------------------------------------------------

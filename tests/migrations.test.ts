@@ -49,6 +49,14 @@ const reopenSettledMigration = readFileSync(
   'utf8',
 )
 
+const commercialHistoryMigration = readFileSync(
+  new URL(
+    '../supabase/migrations/20260809204545_commercial_crud_and_point_in_time_history.sql',
+    import.meta.url,
+  ),
+  'utf8',
+)
+
 assert.match(
   migration,
   /select \* from public\.settle_receivable\([\s\S]+?\)\s+into r;/,
@@ -157,4 +165,46 @@ assert.match(
   'RPCs de reabertura devem ser restritos a usuarios autenticados',
 )
 
-console.log('Migrations: 18 passaram, 0 falharam.')
+assert.match(
+  commercialHistoryMigration,
+  /create or replace function public\.save_sale_with_commission[\s\S]+?private\.save_sale_graph/,
+  'a venda e o grafo de comissão devem ser persistidos por uma única operação transacional',
+)
+
+assert.match(
+  commercialHistoryMigration,
+  /private\.create_commission_graph[\s\S]+?insert into public\.commissions[\s\S]+?insert into public\.receivables[\s\S]+?insert into public\.commission_installments/,
+  'a geração deve criar comissão, contas a receber e parcelas na mesma transação',
+)
+
+assert.match(
+  commercialHistoryMigration,
+  /commission_has_financial_activity[\s\S]+?public\.settlements[\s\S]+?public\.transactions[\s\S]+?public\.invoices/,
+  'edições e exclusões comerciais devem proteger baixas, caixa e documentos fiscais',
+)
+
+assert.match(
+  commercialHistoryMigration,
+  /create or replace function public\.restore_company_to_history_point[\s\S]+?private\.can_admin_company[\s\S]+?distinct on \(a\.entity_type, a\.entity_id\)[\s\S]+?jsonb_populate_record/,
+  'a restauração deve ser administrativa e reconstruir o estado anterior por entidade',
+)
+
+assert.match(
+  commercialHistoryMigration,
+  /create or replace function private\.audit_row_change[\s\S]+?commission_installments[\s\S]+?commission_splits[\s\S]+?actor_id/,
+  'a auditoria deve atribuir empresa às filhas de comissão e preservar o autor',
+)
+
+assert.match(
+  commercialHistoryMigration,
+  /private\.record_history_restore[\s\S]+?'restore'[\s\S]+?'affectedRows'/,
+  'cada restauração deve registrar motivo, ponto escolhido e quantidade afetada',
+)
+
+assert.match(
+  commercialHistoryMigration,
+  /current_setting\('re9\.history_restore'[\s\S]+?private\.can_admin_company[\s\S]+?set_config\('re9\.history_restore', 'on', true\)/,
+  'a exceção às proteções de exclusão deve existir apenas na restauração administrativa',
+)
+
+console.log('Migrations: 25 passaram, 0 falharam.')

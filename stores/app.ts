@@ -51,6 +51,9 @@ export const useAppStore = defineStore('app', {
     isSuperAdmin(): boolean {
       return this.currentRole === 'super_admin'
     },
+    isAdmin(): boolean {
+      return this.currentRole === 'super_admin' || this.currentRole === 'admin'
+    },
     isBroker(): boolean {
       return this.currentRole === 'broker'
     },

@@ -70,6 +70,10 @@ const dialog = ref(false)
 const formRef = ref()
 const editing = ref<Partial<Sale>>({})
 const commission = ref({ installments: 1, managerPct: 0, captadorPct: 0 })
+const saving = ref(false)
+const formError = ref('')
+const detailsDialog = ref(false)
+const selected = ref<Sale | null>(null)
 
 function openNew() {
   editing.value = {
@@ -79,24 +83,48 @@ function openNew() {
     saleValue: 0,
   }
   commission.value = { installments: 1, managerPct: 0, captadorPct: 0 }
+  formError.value = ''
   dialog.value = true
 }
+
+function openEdit(s: Sale) {
+  const existingCommission = finance.commissionOfSale(s.id)
+  const splits = existingCommission ? finance.splitsOf(existingCommission.id) : []
+
+  editing.value = { ...s }
+  commission.value = {
+    installments: existingCommission ? finance.installmentsOf(existingCommission.id).length : 1,
+    managerPct: splits.find(sp => sp.beneficiaryType === 'manager')?.percentage ?? 0,
+    captadorPct: splits.find(sp => sp.beneficiaryType === 'captador')?.percentage ?? 0,
+  }
+  formError.value = ''
+  detailsDialog.value = false
+  dialog.value = true
+}
+
 async function save() {
   const { valid } = await formRef.value.validate()
   if (!valid)
     return
-  finance.saveSale(editing.value, true, {
-    installments: Number(commission.value.installments) || 1,
-    managerPct: Number(commission.value.managerPct) || 0,
-    captadorPct: Number(commission.value.captadorPct) || 0,
-  })
-  dialog.value = false
+  saving.value = true
+  formError.value = ''
+  try {
+    await finance.saveSale(editing.value, true, {
+      installments: Number(commission.value.installments) || 1,
+      managerPct: Number(commission.value.managerPct) || 0,
+      captadorPct: Number(commission.value.captadorPct) || 0,
+    })
+    dialog.value = false
+  }
+  catch (error) {
+    formError.value = (error as Error).message
+  }
+  finally {
+    saving.value = false
+  }
 }
 
 // 👉 Detalhes da venda
-const detailsDialog = ref(false)
-const selected = ref<Sale | null>(null)
-
 const selectedCommission = computed(() =>
   selected.value ? finance.commissionOfSale(selected.value.id) : undefined,
 )
@@ -112,6 +140,28 @@ const selectedSplits = computed(() =>
 function openDetails(s: Sale) {
   selected.value = s
   detailsDialog.value = true
+}
+
+const deleteDialog = ref(false)
+const deleteTarget = ref<Sale | null>(null)
+const deleteError = ref('')
+
+function askDelete(s: Sale) {
+  deleteTarget.value = s
+  deleteError.value = ''
+  deleteDialog.value = true
+}
+
+async function confirmDelete() {
+  if (!deleteTarget.value)
+    return
+  try {
+    await finance.deleteSale(deleteTarget.value.id)
+    deleteTarget.value = null
+  }
+  catch (error) {
+    deleteError.value = (error as Error).message
+  }
 }
 </script>
 
@@ -247,7 +297,7 @@ function openDetails(s: Sale) {
           </template>
 
           <template #item.actions="{ item }">
-            <div class="d-flex justify-end">
+            <div class="d-flex justify-end ga-1">
               <IconBtn
                 aria-label="Ver detalhes da venda"
                 @click="openDetails(item)"
@@ -255,6 +305,27 @@ function openDetails(s: Sale) {
                 <VIcon icon="ri-eye-line" />
                 <VTooltip activator="parent">
                   Ver detalhes
+                </VTooltip>
+              </IconBtn>
+              <IconBtn
+                v-if="!app.isReadOnly"
+                aria-label="Editar venda"
+                @click="openEdit(item)"
+              >
+                <VIcon icon="ri-pencil-line" />
+                <VTooltip activator="parent">
+                  Editar
+                </VTooltip>
+              </IconBtn>
+              <IconBtn
+                v-if="app.isAdmin"
+                aria-label="Excluir venda"
+                color="error"
+                @click="askDelete(item)"
+              >
+                <VIcon icon="ri-delete-bin-line" />
+                <VTooltip activator="parent">
+                  Excluir
                 </VTooltip>
               </IconBtn>
             </div>
@@ -277,13 +348,21 @@ function openDetails(s: Sale) {
     >
       <VCard>
         <VCardItem>
-          <VCardTitle>Nova venda</VCardTitle>
+          <VCardTitle>{{ editing.id ? 'Editar venda' : 'Nova venda' }}</VCardTitle>
         </VCardItem>
         <VCardText>
           <VForm
             ref="formRef"
             @submit.prevent="save"
           >
+            <VAlert
+              v-if="formError"
+              type="error"
+              variant="tonal"
+              density="compact"
+              class="mb-4"
+              :text="formError"
+            />
             <VRow>
               <VCol
                 cols="12"
@@ -447,7 +526,10 @@ function openDetails(s: Sale) {
           >
             Cancelar
           </VBtn>
-          <VBtn @click="save">
+          <VBtn
+            :loading="saving"
+            @click="save"
+          >
             Salvar
           </VBtn>
         </VCardText>
@@ -640,6 +722,15 @@ function openDetails(s: Sale) {
 
         <VCardText class="d-flex justify-end pt-0">
           <VBtn
+            v-if="!app.isReadOnly"
+            variant="tonal"
+            class="me-3"
+            prepend-icon="ri-pencil-line"
+            @click="selected && openEdit(selected)"
+          >
+            Editar
+          </VBtn>
+          <VBtn
             variant="tonal"
             color="secondary"
             @click="detailsDialog = false"
@@ -649,5 +740,23 @@ function openDetails(s: Sale) {
         </VCardText>
       </VCard>
     </VDialog>
+
+    <VAlert
+      v-if="deleteError"
+      type="error"
+      variant="tonal"
+      closable
+      class="mt-4"
+      :text="deleteError"
+      @click:close="deleteError = ''"
+    />
+    <ConfirmDialog
+      v-model="deleteDialog"
+      title="Excluir venda"
+      confirm-text="Excluir"
+      confirm-color="error"
+      :message="`A venda de '${deleteTarget?.buyerName}' e sua comissão/contas ainda não liquidadas serão removidas. Registros com recebimentos ou pagamentos exigem estorno prévio. Deseja continuar?`"
+      @confirm="confirmDelete"
+    />
   </div>
 </template>
