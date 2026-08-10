@@ -57,6 +57,14 @@ const commercialHistoryMigration = readFileSync(
   'utf8',
 )
 
+const developmentDefaultsMigration = readFileSync(
+  new URL(
+    '../supabase/migrations/20260810233332_default_development_commission_rates.sql',
+    import.meta.url,
+  ),
+  'utf8',
+)
+
 assert.match(
   migration,
   /select \* from public\.settle_receivable\([\s\S]+?\)\s+into r;/,
@@ -207,4 +215,22 @@ assert.match(
   'a exceção às proteções de exclusão deve existir apenas na restauração administrativa',
 )
 
-console.log('Migrations: 25 passaram, 0 falharam.')
+assert.match(
+  developmentDefaultsMigration,
+  /alter column commission_percentage set default 4/,
+  'o banco deve aplicar 4% quando a comissão de um novo empreendimento for omitida',
+)
+
+assert.match(
+  developmentDefaultsMigration,
+  /alter column broker_split_percentage set default 2/,
+  'o banco deve aplicar 2% quando o repasse de um novo empreendimento for omitido',
+)
+
+assert.doesNotMatch(
+  developmentDefaultsMigration,
+  /update public\.developments/,
+  'a migration não deve sobrescrever percentuais históricos',
+)
+
+console.log('Migrations: 28 passaram, 0 falharam.')

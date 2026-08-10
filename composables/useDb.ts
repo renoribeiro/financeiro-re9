@@ -18,6 +18,10 @@ import type {
 } from '@/types/finance'
 import type { Database } from '@/types/database.types'
 import { useAppStore } from '@/stores/app'
+import {
+  DEFAULT_BROKER_SPLIT_PERCENTAGE,
+  DEFAULT_DEVELOPMENT_COMMISSION_PERCENTAGE,
+} from '@/utils/developmentDefaults'
 
 const toCamel = (value: string) => value.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase())
 
@@ -426,8 +430,10 @@ export function useDb() {
         developer: input.developer,
         address: input.address,
         type: input.type,
-        commission_percentage: input.commissionPercentage,
-        broker_split_percentage: input.brokerSplitPercentage,
+        commission_percentage: input.commissionPercentage
+          ?? (input.id ? undefined : DEFAULT_DEVELOPMENT_COMMISSION_PERCENTAGE),
+        broker_split_percentage: input.brokerSplitPercentage
+          ?? (input.id ? undefined : DEFAULT_BROKER_SPLIT_PERCENTAGE),
         is_active: input.isActive,
         notes: input.notes,
       }) as Promise<Development>

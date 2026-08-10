@@ -2,7 +2,7 @@
 import { useFinanceStore } from '@/stores/finance'
 import { useAppStore } from '@/stores/app'
 import { type DateWindow, isWithin } from '@/utils/dateFilter'
-import type { Sale } from '@/types/finance'
+import type { Development, Sale } from '@/types/finance'
 
 const finance = useFinanceStore()
 const app = useAppStore()
@@ -74,6 +74,7 @@ const saving = ref(false)
 const formError = ref('')
 const detailsDialog = ref(false)
 const selected = ref<Sale | null>(null)
+const quickDevelopmentDialog = ref(false)
 
 function openNew() {
   editing.value = {
@@ -100,6 +101,15 @@ function openEdit(s: Sale) {
   formError.value = ''
   detailsDialog.value = false
   dialog.value = true
+}
+
+function openQuickDevelopment() {
+  quickDevelopmentDialog.value = true
+}
+
+function selectCreatedDevelopment(development: Development) {
+  editing.value.developmentId = development.id
+  quickDevelopmentDialog.value = false
 }
 
 async function save() {
@@ -368,12 +378,31 @@ async function confirmDelete() {
                 cols="12"
                 md="8"
               >
-                <VSelect
-                  v-model="editing.developmentId"
-                  label="Empreendimento"
-                  :items="developmentOptions"
-                  :rules="[requiredRule]"
-                />
+                <div class="d-flex align-start ga-2">
+                  <VSelect
+                    v-model="editing.developmentId"
+                    class="flex-grow-1"
+                    label="Empreendimento"
+                    :items="developmentOptions"
+                    :rules="[requiredRule]"
+                  />
+                  <VBtn
+                    v-if="app.canManageFinance"
+                    type="button"
+                    icon
+                    variant="tonal"
+                    color="primary"
+                    height="56"
+                    min-width="48"
+                    aria-label="Cadastrar novo empreendimento"
+                    @click="openQuickDevelopment"
+                  >
+                    <VIcon icon="ri-add-line" />
+                    <VTooltip activator="parent">
+                      Cadastrar empreendimento
+                    </VTooltip>
+                  </VBtn>
+                </div>
               </VCol>
               <VCol
                 cols="12"
@@ -535,6 +564,11 @@ async function confirmDelete() {
         </VCardText>
       </VCard>
     </VDialog>
+
+    <CommercialDevelopmentFormDialog
+      v-model="quickDevelopmentDialog"
+      @saved="selectCreatedDevelopment"
+    />
 
     <!-- Dialog detalhes -->
     <VDialog

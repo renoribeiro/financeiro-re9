@@ -18,7 +18,7 @@
     "build:icons": "tsx plugins/iconify/build-icons.ts",
     "postinstall": "nuxt prepare && npm run build:icons",
     "generate": "nuxt generate",
-    "test": "tsx tests/validators.test.ts && tsx tests/dateFilter.test.ts && tsx tests/financeLedger.test.ts && tsx tests/migrations.test.ts"
+    "test": "tsx tests/validators.test.ts && tsx tests/dateFilter.test.ts && tsx tests/financeLedger.test.ts && tsx tests/developmentDefaults.test.ts && tsx tests/migrations.test.ts"
   },
   "dependencies": {
     "@floating-ui/dom": "1.6.8",

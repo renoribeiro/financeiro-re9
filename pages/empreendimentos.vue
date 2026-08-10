@@ -26,27 +26,17 @@ const filtered = computed(() => {
   })
 })
 
-const typeOptions = Object.entries(developmentTypeLabels).map(([value, title]) => ({ title, value }))
-
 // 👉 Dialog
 const dialog = ref(false)
-const formRef = ref()
-const editing = ref<Partial<Development>>({})
+const editing = ref<Development | null>(null)
 
 function openNew() {
-  editing.value = { type: 'launch', commissionPercentage: 0, brokerSplitPercentage: 0, isActive: true }
+  editing.value = null
   dialog.value = true
 }
 function openEdit(dv: Development) {
-  editing.value = structuredClone(toRaw(dv))
+  editing.value = dv
   dialog.value = true
-}
-async function save() {
-  const { valid } = await formRef.value.validate()
-  if (!valid)
-    return
-  finance.saveDevelopment(editing.value)
-  dialog.value = false
 }
 
 // 👉 Ativar/desativar
@@ -60,17 +50,6 @@ function doToggle() {
   if (target.value)
     finance.toggleActive('developments', target.value.id)
 }
-
-// nota explicativa conforme o tipo selecionado no dialog
-const commissionHint = computed(() => {
-  if (editing.value.type === 'launch') {
-    return 'Lançamento: a construtora paga a comissão integral à imobiliária, '
-      + 'que repassa a fatia definida abaixo ao corretor (gera conta a receber da construtora + conta a pagar de repasse).'
-  }
-
-  return 'Avulso: a imobiliária recebe a comissão (do comprador ou consolidada) '
-    + 'e repassa a fatia definida ao corretor conforme a regra de recebimento.'
-})
 </script>
 
 <template>
@@ -237,115 +216,10 @@ const commissionHint = computed(() => {
       </VCardText>
     </VCard>
 
-    <!-- Dialog de cadastro/edição -->
-    <VDialog
+    <CommercialDevelopmentFormDialog
       v-model="dialog"
-      max-width="640"
-      persistent
-    >
-      <VCard>
-        <VCardItem>
-          <VCardTitle>{{ editing.id ? 'Editar empreendimento' : 'Novo empreendimento' }}</VCardTitle>
-        </VCardItem>
-        <VCardText>
-          <VForm
-            ref="formRef"
-            @submit.prevent="save"
-          >
-            <VRow>
-              <VCol
-                cols="12"
-                md="6"
-              >
-                <VTextField
-                  v-model="editing.name"
-                  label="Nome do empreendimento"
-                  :rules="[requiredRule]"
-                />
-              </VCol>
-              <VCol
-                cols="12"
-                md="6"
-              >
-                <VTextField
-                  v-model="editing.developer"
-                  label="Construtora / Incorporadora"
-                  :rules="[requiredRule]"
-                />
-              </VCol>
-              <VCol cols="12">
-                <VTextField
-                  v-model="editing.address"
-                  label="Endereço"
-                />
-              </VCol>
-              <VCol
-                cols="12"
-                md="6"
-              >
-                <VSelect
-                  v-model="editing.type"
-                  label="Tipo"
-                  :items="typeOptions"
-                />
-              </VCol>
-              <VCol
-                cols="12"
-                md="3"
-              >
-                <VTextField
-                  v-model.number="editing.commissionPercentage"
-                  label="% construtora paga"
-                  type="number"
-                  suffix="%"
-                  :rules="[percentRule]"
-                />
-              </VCol>
-              <VCol
-                cols="12"
-                md="3"
-              >
-                <VTextField
-                  v-model.number="editing.brokerSplitPercentage"
-                  label="% repasse ao corretor"
-                  type="number"
-                  suffix="%"
-                  :rules="[percentRule]"
-                />
-              </VCol>
-              <VCol cols="12">
-                <VAlert
-                  type="info"
-                  variant="tonal"
-                  density="compact"
-                >
-                  {{ commissionHint }}
-                </VAlert>
-              </VCol>
-              <VCol cols="12">
-                <VTextarea
-                  v-model="editing.notes"
-                  label="Observações"
-                  rows="2"
-                />
-              </VCol>
-            </VRow>
-          </VForm>
-        </VCardText>
-        <VCardText class="d-flex justify-end gap-3 pt-0">
-          <VBtn
-            variant="tonal"
-            color="secondary"
-            @click="dialog = false"
-          >
-            Cancelar
-          </VBtn>
-          <VBtn @click="save">
-            Salvar
-          </VBtn>
-        </VCardText>
-      </VCard>
-    </VDialog>
+      :development="editing"
+    />
 
     <ConfirmDialog
       v-model="confirm"
