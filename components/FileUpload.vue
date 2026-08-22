@@ -26,6 +26,20 @@ const loading = ref(false)
 const error = ref('')
 const allowedTypes = new Set(['image/png', 'image/jpeg', 'application/pdf'])
 
+function requestErrorMessage(caught: unknown) {
+  if (caught && typeof caught === 'object') {
+    const value = caught as { data?: { message?: unknown; statusMessage?: unknown }; message?: unknown }
+    const serverMessage = value.data?.message || value.data?.statusMessage
+
+    if (typeof serverMessage === 'string' && serverMessage.trim())
+      return serverMessage
+    if (typeof value.message === 'string' && value.message.trim())
+      return value.message
+  }
+
+  return 'Não foi possível enviar o anexo.'
+}
+
 const currentHref = computed(() => {
   if (!props.modelValue)
     return ''
@@ -83,8 +97,8 @@ async function upload(entityId = props.entityId) {
     return result.reference
   }
   catch (caught) {
-    error.value = caught instanceof Error ? caught.message : 'Não foi possível enviar o anexo.'
-    throw caught
+    error.value = requestErrorMessage(caught)
+    throw new Error(error.value)
   }
   finally {
     loading.value = false

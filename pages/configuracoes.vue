@@ -91,10 +91,12 @@ const taxRegimeOptions = computed(() =>
 
 const savingCompany = ref(false)
 const companyMessage = ref('')
+const companyError = ref('')
 
 async function saveCompany() {
   savingCompany.value = true
   companyMessage.value = ''
+  companyError.value = ''
 
   const patch = {
     name: form.value.name,
@@ -104,6 +106,10 @@ async function saveCompany() {
     city: form.value.city,
     state: form.value.state,
     taxRegime: form.value.taxRegime,
+    stateRegistration: form.value.stateRegistration,
+    municipalRegistration: form.value.municipalRegistration,
+    mainCnae: form.value.mainCnae,
+    cityIbge: form.value.cityIbge,
   }
 
   try {
@@ -115,26 +121,51 @@ async function saveCompany() {
       city: patch.city,
       state: patch.state,
       tax_regime: patch.taxRegime,
+      state_registration: patch.stateRegistration,
+      municipal_registration: patch.municipalRegistration,
+      main_cnae: patch.mainCnae,
+      city_ibge: patch.cityIbge,
     })
     app.updateCompany(app.currentCompany.id, patch)
     companyMessage.value = 'Dados da empresa salvos.'
+  }
+  catch (error) {
+    companyError.value = error instanceof Error ? error.message : 'Não foi possível salvar os dados da empresa.'
   }
   finally {
     savingCompany.value = false
   }
 }
 
-async function saveInvoiceConfig() {
-  const invoiceConfig = { ...form.value.invoiceConfig }
+const invoiceSaving = ref(false)
+const invoiceMessage = ref('')
+const invoiceError = ref('')
 
-  await db.saveCompany(app.currentCompany.id, { invoice_config: invoiceConfig })
-  app.updateCompany(app.currentCompany.id, { invoiceConfig })
+async function saveInvoiceConfig() {
+  invoiceSaving.value = true
+  invoiceMessage.value = ''
+  invoiceError.value = ''
+
+  const invoiceConfig = { ...form.value.invoiceConfig }
+  try {
+    await db.saveCompany(app.currentCompany.id, { invoice_config: invoiceConfig })
+    app.updateCompany(app.currentCompany.id, { invoiceConfig })
+    invoiceMessage.value = 'Configuração fiscal salva.'
+  }
+  catch (error) {
+    invoiceError.value = error instanceof Error ? error.message : 'Não foi possível salvar a configuração fiscal.'
+  }
+  finally {
+    invoiceSaving.value = false
+  }
 }
 
 // 👉 Certificado A1
 const certDays = computed(() => daysUntil(app.currentCompany.certificateExpiry))
 
 const certMeta = computed(() => {
+  if (!app.currentCompany.certificateExpiry)
+    return { color: 'secondary', label: 'Validade não informada' }
   const days = certDays.value
   if (days <= 30)
     return { color: 'error', label: `Vence em ${days} dia(s)` }
@@ -254,6 +285,13 @@ async function sendInvite() {
           <!-- Aba: Empresa -->
           <VWindowItem value="company">
             <VForm @submit.prevent="saveCompany">
+              <VAlert
+                v-if="companyMessage || companyError"
+                :type="companyError ? 'error' : 'success'"
+                variant="tonal"
+                class="mb-4"
+                :text="companyError || companyMessage"
+              />
               <VRow>
                 <VCol
                   cols="12"
@@ -262,6 +300,36 @@ async function sendInvite() {
                   <VTextField
                     v-model="form.name"
                     label="Razão social"
+                    :disabled="app.isReadOnly"
+                  />
+                </VCol>
+                <VCol
+                  cols="12"
+                  md="4"
+                >
+                  <VTextField
+                    v-model="form.stateRegistration"
+                    label="Inscrição estadual"
+                    :disabled="app.isReadOnly"
+                  />
+                </VCol>
+                <VCol
+                  cols="12"
+                  md="4"
+                >
+                  <VTextField
+                    v-model="form.municipalRegistration"
+                    label="Inscrição municipal"
+                    :disabled="app.isReadOnly"
+                  />
+                </VCol>
+                <VCol
+                  cols="12"
+                  md="4"
+                >
+                  <VTextField
+                    v-model="form.mainCnae"
+                    label="CNAE principal"
                     :disabled="app.isReadOnly"
                   />
                 </VCol>
@@ -320,6 +388,16 @@ async function sendInvite() {
                 </VCol>
                 <VCol
                   cols="12"
+                  md="3"
+                >
+                  <VTextField
+                    v-model="form.cityIbge"
+                    label="Código IBGE"
+                    :disabled="app.isReadOnly"
+                  />
+                </VCol>
+                <VCol
+                  cols="12"
                   md="6"
                 >
                   <VSelect
@@ -333,6 +411,7 @@ async function sendInvite() {
               <div class="d-flex justify-end mt-2">
                 <VBtn
                   :disabled="app.isReadOnly"
+                  :loading="savingCompany"
                   prepend-icon="ri-save-line"
                   @click="saveCompany"
                 >
@@ -345,6 +424,13 @@ async function sendInvite() {
           <!-- Aba: NFS-e -->
           <VWindowItem value="invoice">
             <VForm @submit.prevent="saveInvoiceConfig">
+              <VAlert
+                v-if="invoiceMessage || invoiceError"
+                :type="invoiceError ? 'error' : 'success'"
+                variant="tonal"
+                class="mb-4"
+                :text="invoiceError || invoiceMessage"
+              />
               <VRow>
                 <VCol
                   cols="12"
@@ -353,6 +439,46 @@ async function sendInvite() {
                   <VTextField
                     v-model="form.invoiceConfig.defaultCnae"
                     label="CNAE padrão"
+                    :disabled="app.isReadOnly"
+                  />
+                </VCol>
+                <VCol
+                  cols="12"
+                  md="6"
+                >
+                  <VTextField
+                    v-model="form.invoiceConfig.defaultLc116Item"
+                    label="Item LC 116 padrão"
+                    :disabled="app.isReadOnly"
+                  />
+                </VCol>
+                <VCol
+                  cols="12"
+                  md="6"
+                >
+                  <VTextField
+                    v-model="form.invoiceConfig.defaultCtiss"
+                    label="CTISS padrão"
+                    :disabled="app.isReadOnly"
+                  />
+                </VCol>
+                <VCol
+                  cols="12"
+                  md="6"
+                >
+                  <VTextField
+                    v-model="form.invoiceConfig.rpsSeries"
+                    label="Série do RPS"
+                    :disabled="app.isReadOnly"
+                  />
+                </VCol>
+                <VCol
+                  cols="12"
+                  md="6"
+                >
+                  <VSwitch
+                    v-model="form.invoiceConfig.issRetidoDefault"
+                    label="ISS retido por padrão"
                     :disabled="app.isReadOnly"
                   />
                 </VCol>
@@ -380,6 +506,7 @@ async function sendInvite() {
               <div class="d-flex justify-end mt-2 mb-6">
                 <VBtn
                   :disabled="app.isReadOnly"
+                  :loading="invoiceSaving"
                   prepend-icon="ri-save-line"
                   @click="saveInvoiceConfig"
                 >
@@ -406,7 +533,7 @@ async function sendInvite() {
                   </VAvatar>
                   <div>
                     <div class="font-weight-medium">
-                      Validade: {{ formatDate(app.currentCompany.certificateExpiry) }}
+                      Validade: {{ app.currentCompany.certificateExpiry ? formatDate(app.currentCompany.certificateExpiry) : 'não informada' }}
                     </div>
                     <VChip
                       :color="certMeta.color"
@@ -420,14 +547,11 @@ async function sendInvite() {
                 </VCardText>
               </VCard>
 
-              <VFileInput
+              <VAlert
                 class="mt-4"
-                label="Substituir certificado (.pfx)"
-                accept=".pfx"
-                prepend-icon="ri-key-2-line"
-                disabled
-                hint="Funcionalidade simulada — upload de certificado será conectado ao backend."
-                persistent-hint
+                type="info"
+                variant="tonal"
+                text="O certificado A1 é configurado de forma segura nas variáveis do servidor; o arquivo e a senha não são enviados ao navegador."
               />
             </VForm>
           </VWindowItem>

@@ -61,9 +61,9 @@ export interface Database {
         Relationships: []
       }
       employees: {
-        Row: { company_id: string; created_at: string; document: string | null; email: string | null; employment_type: string | null; full_name: string; id: string; phone: string | null; role_title: string | null; salary: number | null; status: string; user_id: string | null }
-        Insert: { company_id: string; created_at?: string; document?: string | null; email?: string | null; employment_type?: string | null; full_name: string; id?: string; phone?: string | null; role_title?: string | null; salary?: number | null; status?: string; user_id?: string | null }
-        Update: { company_id?: string; created_at?: string; document?: string | null; email?: string | null; employment_type?: string | null; full_name?: string; id?: string; phone?: string | null; role_title?: string | null; salary?: number | null; status?: string; user_id?: string | null }
+        Row: { bank_info: Json; company_id: string; created_at: string; document: string | null; email: string | null; employment_type: string | null; full_name: string; hire_date: string | null; id: string; phone: string | null; pj_cnpj: string | null; role_title: string | null; salary: number | null; status: string; termination_date: string | null; user_id: string | null }
+        Insert: { bank_info?: Json; company_id: string; created_at?: string; document?: string | null; email?: string | null; employment_type?: string | null; full_name: string; hire_date?: string | null; id?: string; phone?: string | null; pj_cnpj?: string | null; role_title?: string | null; salary?: number | null; status?: string; termination_date?: string | null; user_id?: string | null }
+        Update: { bank_info?: Json; company_id?: string; created_at?: string; document?: string | null; email?: string | null; employment_type?: string | null; full_name?: string; hire_date?: string | null; id?: string; phone?: string | null; pj_cnpj?: string | null; role_title?: string | null; salary?: number | null; status?: string; termination_date?: string | null; user_id?: string | null }
         Relationships: []
       }
       payables: {
@@ -85,9 +85,9 @@ export interface Database {
         Relationships: []
       }
       suppliers: {
-        Row: { company_id: string; created_at: string; document: string | null; email: string | null; id: string; is_active: boolean; legal_name: string; notes: string | null; phone: string | null; trade_name: string | null }
-        Insert: { company_id: string; created_at?: string; document?: string | null; email?: string | null; id?: string; is_active?: boolean; legal_name: string; notes?: string | null; phone?: string | null; trade_name?: string | null }
-        Update: { company_id?: string; created_at?: string; document?: string | null; email?: string | null; id?: string; is_active?: boolean; legal_name?: string; notes?: string | null; phone?: string | null; trade_name?: string | null }
+        Row: { bank_info: Json; category_id: string | null; company_id: string; created_at: string; document: string | null; email: string | null; id: string; is_active: boolean; legal_name: string; notes: string | null; phone: string | null; trade_name: string | null }
+        Insert: { bank_info?: Json; category_id?: string | null; company_id: string; created_at?: string; document?: string | null; email?: string | null; id?: string; is_active?: boolean; legal_name: string; notes?: string | null; phone?: string | null; trade_name?: string | null }
+        Update: { bank_info?: Json; category_id?: string | null; company_id?: string; created_at?: string; document?: string | null; email?: string | null; id?: string; is_active?: boolean; legal_name?: string; notes?: string | null; phone?: string | null; trade_name?: string | null }
         Relationships: []
       }
       transactions: {

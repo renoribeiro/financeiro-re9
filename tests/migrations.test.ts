@@ -65,6 +65,14 @@ const developmentDefaultsMigration = readFileSync(
   'utf8',
 )
 
+const productionAuditMigration = readFileSync(
+  new URL(
+    '../supabase/migrations/20260811005921_production_audit_integrity_fixes.sql',
+    import.meta.url,
+  ),
+  'utf8',
+)
+
 assert.match(
   migration,
   /select \* from public\.settle_receivable\([\s\S]+?\)\s+into r;/,
@@ -233,4 +241,34 @@ assert.doesNotMatch(
   'a migration não deve sobrescrever percentuais históricos',
 )
 
-console.log('Migrations: 28 passaram, 0 falharam.')
+assert.match(
+  productionAuditMigration,
+  /alter table public\.suppliers[\s\S]+?bank_info[\s\S]+?alter table public\.employees[\s\S]+?hire_date/,
+  'campos exibidos nos cadastros devem existir no schema persistido',
+)
+
+assert.match(
+  productionAuditMigration,
+  /alter table public\.invoices[\s\S]+?cnae_code[\s\S]+?taker_address[\s\S]+?cancel_reason/,
+  'todos os dados usados na emissão fiscal devem sobreviver à hidratação',
+)
+
+assert.match(
+  productionAuditMigration,
+  /where status = 'simulated'[\s\S]+?invoices_status_check[\s\S]+?'processing'[\s\S]+?'error'/,
+  'notas simuladas legadas devem voltar a pendente e o status fictício deve ser removido',
+)
+
+assert.match(
+  productionAuditMigration,
+  /create policy sales_select[\s\S]+?private\.can_read_sale[\s\S]+?create policy commission_installments_select[\s\S]+?private\.can_read_commission/,
+  'o RLS deve limitar vendas e o grafo de comissão do corretor ao próprio cadastro',
+)
+
+assert.match(
+  productionAuditMigration,
+  /create policy notifications_insert[\s\S]+?private\.can_manage_finance[\s\S]+?create policy notifications_update[\s\S]+?private\.is_company_member[\s\S]+?grant insert, update on public\.notifications/,
+  'notificações do painel devem ser persistíveis por perfis financeiros e marcáveis como lidas',
+)
+
+console.log('Migrations: 33 passaram, 0 falharam.')

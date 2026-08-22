@@ -9,6 +9,7 @@ const meta = <T extends string>(m: Record<T, Meta>) => m
 
 export const payableStatusMeta = meta({
   open: { label: 'Em aberto', color: 'info' },
+  partial: { label: 'Parcial', color: 'warning' },
   paid: { label: 'Pago', color: 'success' },
   overdue: { label: 'Vencido', color: 'error' },
   cancelled: { label: 'Cancelado', color: 'secondary' },

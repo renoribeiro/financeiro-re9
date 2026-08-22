@@ -3,7 +3,8 @@ import { useAppStore } from '@/stores/app'
 // ============================================================================
 // Guarda de rota por empresa/perfil. Complementa a ocultação cosmética do menu:
 // impede acesso por URL direta a páginas fora do escopo do perfil/empresa atual.
-// (Auth de credenciais permanece mock — ver docs/MELHORIAS-2026-07.md.)
+// A autenticação é validada pelo middleware do Supabase; este arquivo aplica
+// as restrições de produto complementares ao RLS do banco.
 // ============================================================================
 
 // páginas comerciais existem apenas para a imobiliária
@@ -30,9 +31,13 @@ const brokerBlocked = new Set([
   '/importador',
   '/auditoria',
   '/dashboard-consolidado',
+  '/clientes',
   '/empreendimentos',
   '/comissoes',
 ])
+
+const managementOnly = new Set(['/importador'])
+const auditRoles = new Set(['super_admin', 'admin', 'financial', 'accountant'])
 
 export default defineNuxtRouteMiddleware(to => {
   const app = useAppStore()
@@ -45,4 +50,13 @@ export default defineNuxtRouteMiddleware(to => {
   // corretor não acessa páginas de gestão financeira/administrativa
   if (app.isBroker && brokerBlocked.has(path))
     return navigateTo('/portal-corretor')
+
+  if (managementOnly.has(path) && !app.canManageFinance)
+    return navigateTo('/dashboard')
+
+  if (path === '/auditoria' && !auditRoles.has(app.currentRole))
+    return navigateTo('/dashboard')
+
+  if (path === '/dashboard-consolidado' && !app.isSuperAdmin)
+    return navigateTo('/dashboard')
 })

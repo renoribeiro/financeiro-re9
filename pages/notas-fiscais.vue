@@ -81,12 +81,33 @@ function openDetail(inv: Invoice) {
   detailDialog.value = true
 }
 
-// 👉 Emitir
+const actionLoadingId = ref('')
+const actionMessage = ref('')
+const actionError = ref('')
+
+async function runInvoiceAction(inv: Invoice, action: () => Promise<unknown>, successMessage: string) {
+  actionLoadingId.value = inv.id
+  actionMessage.value = ''
+  actionError.value = ''
+  try {
+    await action()
+    if (inv.status === 'error')
+      throw new Error(inv.errorMessage || 'A operação fiscal não foi concluída.')
+    actionMessage.value = successMessage
+  }
+  catch (error) {
+    actionError.value = error instanceof Error ? error.message : 'Não foi possível concluir a operação fiscal.'
+  }
+  finally {
+    actionLoadingId.value = ''
+  }
+}
+
 function issue(inv: Invoice) {
-  finance.issueInvoice(inv.id)
+  return runInvoiceAction(inv, () => finance.issueInvoice(inv.id), 'Emissão fiscal processada.')
 }
 function retry(inv: Invoice) {
-  finance.retryInvoice(inv.id)
+  return runInvoiceAction(inv, () => finance.retryInvoice(inv.id), 'Consulta fiscal processada.')
 }
 
 // 👉 Cancelar (confirmação)
@@ -96,9 +117,13 @@ function askCancel(inv: Invoice) {
   target.value = inv
   confirm.value = true
 }
-function doCancel() {
-  if (target.value)
-    finance.cancelInvoice(target.value.id)
+async function doCancel() {
+  if (target.value) {
+    const invoice = target.value
+
+    confirm.value = false
+    await runInvoiceAction(invoice, () => finance.cancelInvoice(invoice.id), 'NFS-e cancelada com sucesso.')
+  }
 }
 </script>
 
@@ -108,6 +133,15 @@ function doCancel() {
       title="Notas Fiscais (NFS-e)"
       subtitle="Emissão e acompanhamento de notas de serviço"
       icon="ri-file-text-line"
+    />
+
+    <VAlert
+      v-if="actionMessage || actionError"
+      :type="actionError ? 'error' : 'success'"
+      variant="tonal"
+      class="mb-3"
+      :text="actionError || actionMessage"
+      closable
     />
 
     <!-- Integração ativa (certificado A1 + SEFIN Fortaleza) -->
@@ -122,26 +156,12 @@ function doCancel() {
       Emissão real conectada à SEFIN Fortaleza
       <strong>({{ nfse.ambiente === 'producao' ? 'Produção' : 'Homologação' }})</strong>
       via {{ nfse.provider === 'nacional' ? 'NFS-e Nacional' : 'webservice GINFES' }}.
-      <template v-if="cert?.subjectCN">
-        Certificado: {{ cert.subjectCN }}<template v-if="cert.daysToExpire != null">
-          · vence em {{ cert.daysToExpire }} dia(s)
-        </template>.
+      <template v-if="cert?.daysToExpire != null">
+        Certificado válido por {{ cert.daysToExpire }} dia(s).
       </template>
     </VAlert>
 
-    <!-- Certificado presente porém inválido -->
-    <VAlert
-      v-else-if="cert?.present && cert?.error"
-      type="error"
-      variant="tonal"
-      density="comfortable"
-      class="mb-3"
-      icon="ri-error-warning-line"
-    >
-      Certificado A1 configurado, mas inválido: {{ cert.error }}
-    </VAlert>
-
-    <!-- Modo simulado (sem certificado) -->
+    <!-- Integração indisponível (sem simulação fiscal) -->
     <VAlert
       v-else
       type="info"
@@ -150,8 +170,8 @@ function doCancel() {
       class="mb-3"
       icon="ri-information-line"
     >
-      Emissão <strong>simulada</strong> — envie o certificado digital A1 e as variáveis da SEFIN no
-      servidor para ativar a emissão real. Veja <code>docs/NFSE-FORTALEZA.md</code>.
+      Emissão fiscal <strong>indisponível</strong>. Configure o certificado digital A1 e as variáveis da SEFIN
+      no servidor. Nenhuma nota é simulada ou considerada emitida sem resposta da prefeitura.
     </VAlert>
 
     <!-- Aviso de validade do certificado -->
@@ -307,7 +327,8 @@ function doCancel() {
         <template #item.actions="{ item }">
           <div class="d-flex justify-end">
             <IconBtn
-              v-if="item.status === 'pending' && !app.isReadOnly"
+              v-if="item.status === 'pending' && app.canManageFinance"
+              :disabled="actionLoadingId === item.id"
               @click="issue(item)"
             >
               <VIcon icon="ri-send-plane-line" />
@@ -329,7 +350,8 @@ function doCancel() {
             />
             <IconBtn
               v-if="item.status === 'processing'"
-              @click="finance.consultInvoice(item.id)"
+              :disabled="actionLoadingId === item.id"
+              @click="retry(item)"
             >
               <VIcon icon="ri-refresh-line" />
               <VTooltip
@@ -341,7 +363,8 @@ function doCancel() {
             </IconBtn>
 
             <IconBtn
-              v-if="item.status === 'error' && !app.isReadOnly"
+              v-if="item.status === 'error' && app.canManageFinance"
+              :disabled="actionLoadingId === item.id"
               @click="retry(item)"
             >
               <VIcon icon="ri-refresh-line" />
@@ -367,7 +390,8 @@ function doCancel() {
             </IconBtn>
 
             <IconBtn
-              v-if="item.status === 'issued' && !app.isReadOnly"
+              v-if="item.status === 'issued' && app.canManageFinance"
+              :disabled="actionLoadingId === item.id"
               @click="askCancel(item)"
             >
               <VIcon icon="ri-close-circle-line" />

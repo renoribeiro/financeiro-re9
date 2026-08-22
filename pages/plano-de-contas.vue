@@ -37,6 +37,7 @@ const typeOptions = typeOrder.map(value => ({ title: accountTypeLabels[value], v
 const dialog = ref(false)
 const formRef = ref()
 const editing = ref<Partial<ChartAccount>>({})
+const actionError = ref('')
 
 const parentOptions = computed(() =>
   finance.companyChartAccounts
@@ -57,8 +58,14 @@ async function save() {
   const { valid } = await formRef.value.validate()
   if (!valid)
     return
-  finance.saveChartAccount(editing.value)
-  dialog.value = false
+  actionError.value = ''
+  try {
+    await finance.saveChartAccount(editing.value)
+    dialog.value = false
+  }
+  catch (error) {
+    actionError.value = error instanceof Error ? error.message : 'Não foi possível salvar a conta contábil.'
+  }
 }
 
 // 👉 Ativar/desativar
@@ -68,9 +75,15 @@ function askToggle(a: ChartAccount) {
   target.value = a
   confirm.value = true
 }
-function doToggle() {
-  if (target.value)
-    finance.toggleActive('chartAccounts', target.value.id)
+async function doToggle() {
+  if (target.value) {
+    try {
+      await finance.toggleActive('chartAccounts', target.value.id)
+    }
+    catch (error) {
+      actionError.value = error instanceof Error ? error.message : 'Não foi possível alterar a conta contábil.'
+    }
+  }
 }
 </script>
 
@@ -91,6 +104,14 @@ function doToggle() {
         </VBtn>
       </template>
     </AppPageHeader>
+
+    <VAlert
+      v-if="actionError"
+      type="error"
+      variant="tonal"
+      class="mb-4"
+      :text="actionError"
+    />
 
     <VRow>
       <VCol

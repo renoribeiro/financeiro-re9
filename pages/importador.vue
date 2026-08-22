@@ -205,6 +205,12 @@ watch(targetModule, () => {
 // ---- Validação --------------------------------------------------------------
 interface RowResult { data: Record<string, string>; errors: string[] }
 
+const normalizeImportedDate = (value: string) => {
+  const ptBr = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value.trim())
+
+  return ptBr ? `${ptBr[3]}-${ptBr[2]}-${ptBr[1]}T00:00:00` : value
+}
+
 const validated = computed<RowResult[]>(() => {
   const fields = moduleFields[targetModule.value]
   const active = mapping.value.filter(m => m.field)
@@ -233,7 +239,7 @@ const validated = computed<RowResult[]>(() => {
         errors.push(`${f.title} inválido`)
       if (f.type === 'number' && Number.isNaN(Number(v.replace(/\./g, '').replace(',', '.'))))
         errors.push(`${f.title} não numérico`)
-      if (f.type === 'date' && Number.isNaN(new Date(v).getTime()))
+      if (f.type === 'date' && Number.isNaN(new Date(normalizeImportedDate(v)).getTime()))
         errors.push(`${f.title} data inválida`)
     })
 
@@ -247,13 +253,15 @@ const errorRows = computed(() => validated.value.filter(r => r.errors.length))
 const parseNumber = (v: string) => Number(String(v).replace(/[^\d,.-]/g, '').replace(/\./g, '').replace(',', '.')) || 0
 
 const parseDateISO = (v: string) => {
-  const d = new Date(v)
+  const d = new Date(normalizeImportedDate(v))
 
   return Number.isNaN(d.getTime()) ? todayISO() : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 // ---- Importação -------------------------------------------------------------
 const imported = ref(0)
+const importFailures = ref<string[]>([])
+const importing = ref(false)
 
 function resolveByName(list: { id: string; name?: string; fullName?: string; legalName?: string; tradeName?: string }[], name?: string) {
   if (!name)
@@ -265,21 +273,29 @@ function resolveByName(list: { id: string; name?: string; fullName?: string; leg
 
 type RowData = Record<string, string>
 
-const importers: Record<string, (d: RowData) => void> = {
+const importers: Record<string, (d: RowData) => Promise<unknown>> = {
   suppliers: d => finance.saveSupplier({ legalName: d.legalName, tradeName: d.tradeName, documentNumber: (d.documentNumber ?? '').replace(/\D/g, ''), documentType: (d.documentNumber ?? '').replace(/\D/g, '').length === 11 ? 'cpf' : 'cnpj', email: d.email, phone: d.phone, bankInfo: d.pix ? { pix: d.pix } : {} }),
   employees: d => finance.saveEmployee({ fullName: d.fullName, cpf: (d.cpf ?? '').replace(/\D/g, ''), email: d.email, phone: d.phone, baseSalary: d.baseSalary ? parseNumber(d.baseSalary) : undefined, employmentType: 'clt' }),
   payables: d => finance.savePayable({ description: d.description, amount: parseNumber(d.amount), dueDate: parseDateISO(d.dueDate), supplierId: resolveByName(finance.companySuppliers, d.supplierName), recurrence: 'once' }),
   receivables: d => finance.saveReceivable({ description: d.description, clientName: d.clientName, amount: parseNumber(d.amount), dueDate: parseDateISO(d.dueDate), invoiceRule: 'on_receive', recurrence: 'once' }),
-  sales: d => finance.saveSale({ buyerName: d.buyerName, saleValue: parseNumber(d.saleValue), saleDate: parseDateISO(d.saleDate), developmentId: resolveByName(finance.companyDevelopments, d.developmentName) ?? '', brokerId: resolveByName(finance.companyEmployees, d.brokerName) ?? '' }, false),
+  sales: d => finance.saveSale({ buyerName: d.buyerName, saleValue: parseNumber(d.saleValue), saleDate: parseDateISO(d.saleDate), developmentId: resolveByName(finance.companyDevelopments, d.developmentName) ?? '', brokerId: resolveByName(finance.companyEmployees, d.brokerName) ?? '' }),
 }
 
-function doImport() {
+async function doImport() {
   const run = importers[targetModule.value]
   let count = 0
+  importFailures.value = []
   if (run) {
-    for (const { data } of validRows.value) {
-      run(data)
-      count++
+    for (const [index, { data }] of validRows.value.entries()) {
+      try {
+        const result = await run(data)
+        if (!result)
+          throw new Error('A operação não retornou o registro persistido.')
+        count++
+      }
+      catch (error) {
+        importFailures.value.push(`Linha ${index + 2}: ${error instanceof Error ? error.message : 'falha ao persistir'}`)
+      }
     }
   }
   imported.value = count
@@ -292,9 +308,16 @@ const items = [
   { title: 'Resultado', value: 4 },
 ]
 
-function next() {
-  if (step.value === 3)
-    doImport()
+async function next() {
+  if (step.value === 3) {
+    importing.value = true
+    try {
+      await doImport()
+    }
+    finally {
+      importing.value = false
+    }
+  }
   if (step.value < 4)
     step.value++
 }
@@ -304,7 +327,7 @@ function prev() {
 }
 
 const canAdvance = computed(() => {
-  if (app.isReadOnly)
+  if (!app.canManageFinance)
     return false
   if (step.value === 1)
     return headers.value.length > 0
@@ -329,8 +352,7 @@ const canAdvance = computed(() => {
       class="mb-6"
       icon="ri-robot-2-line"
     >
-      Parsing, validação e importação reais para o app (em memória). O auto-mapeamento é heurístico;
-      ao conectar a Claude API ele passa a sugerir o mapeamento de forma inteligente (ver docs/MELHORIAS).
+      Parsing, validação e importação persistidos no Supabase. Revise o mapeamento heurístico antes de confirmar.
     </VAlert>
 
     <VCard>
@@ -487,11 +509,24 @@ const canAdvance = computed(() => {
               4. Importação concluída
             </h6>
             <VAlert
-              type="success"
+              :type="importFailures.length ? 'warning' : 'success'"
               variant="tonal"
               icon="ri-checkbox-circle-line"
-              :text="`${imported} registro(s) importado(s) para ${moduleLabel}. ${errorRows.length} ignorado(s) por erro.`"
+              :text="`${imported} registro(s) importado(s) para ${moduleLabel}. ${errorRows.length} ignorado(s) na validação e ${importFailures.length} falharam ao persistir.`"
             />
+            <VAlert
+              v-if="importFailures.length"
+              type="error"
+              variant="tonal"
+              class="mt-4"
+            >
+              <div
+                v-for="failure in importFailures.slice(0, 20)"
+                :key="failure"
+              >
+                {{ failure }}
+              </div>
+            </VAlert>
           </VCardText>
         </template>
       </VStepper>
@@ -511,7 +546,8 @@ const canAdvance = computed(() => {
         <VBtn
           v-if="step < 4"
           append-icon="ri-arrow-right-line"
-          :disabled="!canAdvance"
+          :loading="importing"
+          :disabled="!canAdvance || importing"
           @click="next"
         >
           {{ step === 3 ? 'Importar' : 'Avançar' }}

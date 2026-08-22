@@ -42,11 +42,8 @@ jobs:
         env:
           SUPABASE_URL: https://example.supabase.co
           SUPABASE_KEY: sb_publishable_ci_placeholder
-      - name: Dependency audit (high visibility)
-        continue-on-error: true
+      - name: Block high and critical vulnerabilities
         run: pnpm audit --prod --audit-level high
-      - name: Block critical vulnerabilities
-        run: pnpm audit --prod --audit-level critical
 
   publish:
     needs: quality

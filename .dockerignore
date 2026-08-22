@@ -21,6 +21,9 @@ dist
 # Documentação e testes (não necessários para o build da imagem)
 docs
 tests
+scripts
+data/seed.ts
+2026-06-23-re9-financas-design.md
 
 # Logs e temporários
 *.log

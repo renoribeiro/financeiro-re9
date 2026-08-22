@@ -101,7 +101,7 @@ export function getNfseConfig(): NfseConfig {
     soapEndpoint: process.env.NFSE_SOAP_ENDPOINT?.trim()
       || (ambiente === 'producao' ? FORTALEZA_GINFES_SOAP.producao : FORTALEZA_GINFES_SOAP.homologacao),
     aliquotaAsFraction: process.env.NFSE_ALIQUOTA_PERCENT !== '1',
-    skipServerHostnameCheck: process.env.NFSE_SKIP_SERVER_HOSTNAME_CHECK === '1',
+    skipServerHostnameCheck: ambiente === 'homologacao' && process.env.NFSE_SKIP_SERVER_HOSTNAME_CHECK === '1',
     nacionalBaseUrl: process.env.NFSE_NACIONAL_BASE_URL?.trim()
       || (ambiente === 'producao' ? NACIONAL_BASE.producao : NACIONAL_BASE.homologacao),
     timeoutMs: Number(process.env.NFSE_TIMEOUT_MS) || 30000,

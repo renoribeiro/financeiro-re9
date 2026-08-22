@@ -1,7 +1,6 @@
 // ============================================================================
 // RE9 Finanças — Modelo de dados (TypeScript)
-// Reflete o design spec (2026-06-23-re9-financas-design.md). Camada in-memory
-// (Pinia) simulando o backend multi-tenant Supabase + RLS.
+// Reflete o domínio persistido no backend multi-tenant Supabase + RLS.
 // ============================================================================
 
 // 👉 Multi-tenant / Core ------------------------------------------------------
@@ -141,6 +140,7 @@ export interface Employee {
   cpf: string
   email?: string
   phone?: string
+  roleTitle?: string
   employmentType: EmploymentType
   pjCnpj?: string
   baseSalary?: number

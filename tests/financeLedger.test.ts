@@ -1,5 +1,7 @@
 import {
+  isPayablePending,
   isReceivablePending,
+  payableOutstanding,
   receivableOutstanding,
   transactionEffect,
   transactionExpense,
@@ -20,6 +22,10 @@ function assert(name: string, condition: boolean) {
 }
 
 assert('título em aberto mantém o valor integral pendente', receivableOutstanding({ amount: 1000 }) === 1000)
+assert('conta parcialmente paga considera somente o saldo restante', payableOutstanding({ amount: 1000, paidAmount: 350 }) === 650)
+assert('saldo a pagar nunca fica negativo', payableOutstanding({ amount: 1000, paidAmount: 1200 }) === 0)
+assert('pagamento parcial continua pendente', isPayablePending({ status: 'partial' }))
+assert('conta paga não entra na projeção', !isPayablePending({ status: 'paid' }))
 assert('baixa parcial considera somente o saldo restante', receivableOutstanding({ amount: 1000, receivedAmount: 350 }) === 650)
 assert('saldo nunca fica negativo', receivableOutstanding({ amount: 1000, receivedAmount: 1200 }) === 0)
 assert('status parcial continua pendente', isReceivablePending({ status: 'partial' }))

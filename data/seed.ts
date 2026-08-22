@@ -1,6 +1,6 @@
 // ============================================================================
-// Seed inicial — dados realistas das duas empresas RE9.
-// Tudo em memória (Pinia). Datas relativas a "hoje" para o dashboard fazer sentido.
+// Seed legado de referência, não importado pelo runtime atual.
+// A fonte de verdade da aplicação é o Supabase.
 // ============================================================================
 
 import type {

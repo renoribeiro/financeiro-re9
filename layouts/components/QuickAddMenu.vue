@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { useFinanceStore } from '@/stores/finance'
-import { useDb } from '@/composables/useDb'
 
 // Botão "+" global (cabeçalho) com atalhos de criação, salvando no Supabase.
 const finance = useFinanceStore()
-const db = useDb()
 
 type QuickType = 'payable' | 'receivable' | 'supplier' | 'employee' | 'client'
 
@@ -66,23 +64,35 @@ async function save() {
   try {
     const i = form.value
     if (type.value === 'payable') {
-      await db.createPayable(i)
+      await finance.savePayable({ ...i, status: 'open', recurrence: 'once' })
     }
     else if (type.value === 'receivable') {
-      await db.saveReceivable({
+      await finance.saveReceivable({
         ...i,
         invoiceRule: 'on_receive',
         recurrence: 'once',
       })
     }
     else if (type.value === 'supplier') {
-      await db.createSupplier(i)
+      await finance.saveSupplier({
+        ...i,
+        documentNumber: i.document,
+        documentType: String(i.document ?? '').replace(/\D/g, '').length === 11 ? 'cpf' : 'cnpj',
+        bankInfo: {},
+        isActive: true,
+      })
     }
     else if (type.value === 'employee') {
-      await db.createEmployee(i)
+      await finance.saveEmployee({
+        ...i,
+        cpf: i.document ?? '',
+        baseSalary: i.salary,
+        bankInfo: {},
+        status: 'active',
+      })
     }
     else if (type.value === 'client') {
-      await db.createClient(i)
+      await finance.saveClient(i)
     }
 
     snackText.value = `${titles[type.value]} salvo com sucesso.`

@@ -29,6 +29,7 @@ const filtered = computed(() => {
 // 👉 Dialog
 const dialog = ref(false)
 const editing = ref<Development | null>(null)
+const actionError = ref('')
 
 function openNew() {
   editing.value = null
@@ -46,9 +47,15 @@ function askToggle(dv: Development) {
   target.value = dv
   confirm.value = true
 }
-function doToggle() {
-  if (target.value)
-    finance.toggleActive('developments', target.value.id)
+async function doToggle() {
+  if (target.value) {
+    try {
+      await finance.toggleActive('developments', target.value.id)
+    }
+    catch (error) {
+      actionError.value = error instanceof Error ? error.message : 'Não foi possível alterar o empreendimento.'
+    }
+  }
 }
 </script>
 
@@ -69,6 +76,14 @@ function doToggle() {
         </VBtn>
       </template>
     </AppPageHeader>
+
+    <VAlert
+      v-if="actionError"
+      type="error"
+      variant="tonal"
+      class="mb-4"
+      :text="actionError"
+    />
 
     <VCard>
       <VCardText class="d-flex flex-wrap gap-4">

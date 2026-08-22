@@ -11,6 +11,9 @@ import CompanySelector from '@/layouts/components/CompanySelector.vue'
 import NavbarNotifications from '@/layouts/components/NavbarNotifications.vue'
 import CashBalanceBadge from '@/layouts/components/CashBalanceBadge.vue'
 import QuickAddMenu from '@/layouts/components/QuickAddMenu.vue'
+import { useAppStore } from '@/stores/app'
+
+const app = useAppStore()
 </script>
 
 <template>
@@ -34,7 +37,10 @@ import QuickAddMenu from '@/layouts/components/QuickAddMenu.vue'
         <CashBalanceBadge class="ms-4 d-none d-sm-flex" />
 
         <!-- 👉 Botão global de adicionar (atalhos rápidos) -->
-        <QuickAddMenu class="mobile-navbar__quick-add ms-3" />
+        <QuickAddMenu
+          v-if="app.canManageFinance"
+          class="mobile-navbar__quick-add ms-3"
+        />
 
         <VSpacer />
 

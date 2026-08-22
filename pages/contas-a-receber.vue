@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useFinanceStore } from '@/stores/finance'
 import { useAppStore } from '@/stores/app'
-import { inMonth } from '@/utils/dateFilter'
+import { currentMonthKey, inMonth } from '@/utils/dateFilter'
 import type { ExternalInvoiceInput, ReceiptInput, ReceiptMethod, Receivable, Settlement } from '@/types/finance'
 
 const finance = useFinanceStore()
@@ -12,7 +12,7 @@ useHead({ title: 'Contas a Receber' })
 const search = ref('')
 const statusFilter = ref('all')
 const ruleFilter = ref<string | null>(null)
-const monthFilter = ref('all')
+const monthFilter = ref(currentMonthKey())
 
 const dueDates = computed(() => finance.companyReceivables.map(r => r.dueDate))
 

@@ -78,14 +78,29 @@ export default defineEventHandler(async event => {
     const extension = file.filename.split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin'
     const objectPath = `${companyId}/${String(entityType)}/${entityId}/${common.id}.${extension}`
     const { error: uploadError } = await service.storage.from(ATTACHMENT_BUCKET).upload(objectPath, file.data, { contentType: file.type, upsert: false })
-    if (uploadError)
+    if (uploadError) {
+      console.error('[storage/upload] Falha no armazenamento interno.', {
+        companyId,
+        entityType,
+        entityId,
+        code: uploadError.name,
+        message: uploadError.message,
+      })
       throw createError({ statusCode: 500, message: 'Não foi possível armazenar o arquivo.' })
+    }
 
     uploadedInternalPath = objectPath
     metadata = { ...common, provider: 'internal', bucket_id: ATTACHMENT_BUCKET, object_path: objectPath }
   }
   const { data: attachment, error } = await service.from('attachments').insert(metadata).select('id, original_name, provider').single()
   if (error) {
+    console.error('[storage/upload] Falha ao persistir os metadados.', {
+      companyId,
+      entityType,
+      entityId,
+      code: error.code,
+      message: error.message,
+    })
     if (uploadedInternalPath)
       await service.storage.from(ATTACHMENT_BUCKET).remove([uploadedInternalPath])
     if (uploadedDriveFileId && driveAccessToken) {

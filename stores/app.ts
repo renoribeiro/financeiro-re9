@@ -75,9 +75,11 @@ export const useAppStore = defineStore('app', {
 
   actions: {
     /** Popula o contexto a partir dos dados carregados do Supabase. */
-    hydrate(data: { companies: Company[]; currentUser: UserProfile }) {
+    hydrate(data: { companies: Company[]; users: UserProfile[]; currentUser: UserProfile }) {
       this.companies = data.companies
-      this.users = [data.currentUser]
+      this.users = data.users.some(user => user.id === data.currentUser.id)
+        ? data.users
+        : [...data.users, data.currentUser]
       this.currentUserId = data.currentUser.id
 
       const accessible = data.currentUser.roles.map(r => r.companyId)

@@ -39,8 +39,8 @@ function deriveStatuses<T extends Payable | Receivable>(items: T[]): T[] {
 }
 
 // ============================================================================
-// Store financeira central. Todos os dados são in-memory (clonados do seed).
-// Getters são SEMPRE escopados pela empresa atual (simula RLS multi-tenant).
+// Store financeira central. Os dados são hidratados e persistidos no Supabase.
+// Getters permanecem escopados pela empresa atual além da proteção do RLS.
 // ============================================================================
 
 export const useFinanceStore = defineStore('finance', {
@@ -67,7 +67,7 @@ export const useFinanceStore = defineStore('finance', {
     notificationRules: [] as NotificationRule[],
 
     // Status da integração NFS-e (carregado do servidor sob demanda). null =
-    // ainda não verificado; configured=false → emissão roda no modo simulado.
+    // ainda não verificado; configured=false → emissão fiscal fica indisponível.
     nfseStatus: null as null | {
       enabled?: boolean
       configured: boolean
@@ -282,17 +282,41 @@ export const useFinanceStore = defineStore('finance', {
       useAuditStore().record(action, entityType, description, entityId)
     },
 
-    notify(n: Omit<AppNotification, 'id' | 'companyId' | 'createdAt' | 'status'>) {
-      this.notifications.push({
+    async notify(n: Omit<AppNotification, 'id' | 'companyId' | 'createdAt' | 'status'>) {
+      const transient: AppNotification = {
         ...n,
         id: uid('ntf'),
         companyId: useAppStore().currentCompanyId,
         status: 'sent',
         createdAt: new Date().toISOString(),
-      })
+      }
+
+      try {
+        const saved = await useDb().createNotification(transient)
+
+        this.notifications.push(saved)
+
+        return saved
+      }
+      catch (error) {
+        console.error('[notifications] falha ao persistir notificação:', error)
+        this.notifications.push(transient)
+
+        return transient
+      }
     },
 
     // ---- cadastros base ------------------------------------------------------
+
+    async saveClient(client: Partial<Client>) {
+      if (!this.canWrite())
+        return
+      const saved = await useDb().createClient(client as Record<string, unknown>)
+
+      this.clients.unshift(saved)
+
+      return saved
+    },
 
     async saveSupplier(s: Partial<Supplier>) {
       if (!this.canWrite())
@@ -550,6 +574,8 @@ export const useFinanceStore = defineStore('finance', {
         return
       const remaining = p.amount - (p.paidAmount ?? 0)
       const amount = opts.amount ?? remaining
+      if (!Number.isFinite(amount) || amount <= 0 || amount > remaining)
+        throw new Error(`Informe um valor entre R$ 0,01 e ${formatBRL(remaining)}.`)
       const saved = await useDb().settlePayable(id, amount, opts.proofUrl)
 
       Object.assign(p, saved)
@@ -660,6 +686,8 @@ export const useFinanceStore = defineStore('finance', {
         return
       const remaining = r.amount - (r.receivedAmount ?? 0)
       const amount = opts.amount ?? remaining
+      if (!Number.isFinite(amount) || amount <= 0 || amount > remaining)
+        throw new Error(`Informe um valor entre R$ 0,01 e ${formatBRL(remaining)}.`)
 
       const receipt: ReceiptInput = {
         amount,
@@ -1019,6 +1047,8 @@ export const useFinanceStore = defineStore('finance', {
       try {
         const res = await $fetch('/api/nfse/emitir', { method: 'POST', body: this.buildEmitirRequest(inv) })
 
+        inv.rpsNumber = res.rpsNumber
+
         if (res.success && res.status === 'issued') {
           inv.status = 'issued'
           inv.invoiceNumber = res.invoiceNumber
@@ -1028,22 +1058,25 @@ export const useFinanceStore = defineStore('finance', {
           inv.publicUrl = res.publicUrl
           inv.xmlBase64 = res.xmlBase64
           inv.environment = res.environment
-          this.notify({ type: 'invoice_issued', title: 'NFS-e emitida', message: `NFS-e ${res.invoiceNumber} emitida para ${inv.takerName}.`, channel: 'dashboard', severity: 'success' })
+          await this.notify({ type: 'invoice_issued', title: 'NFS-e emitida', message: `NFS-e ${res.invoiceNumber} emitida para ${inv.takerName}.`, channel: 'dashboard', severity: 'success' })
           this.logAudit('emit_invoice', 'invoice', `NFS-e ${res.invoiceNumber} emitida (SEFIN ${res.environment}) para ${inv.takerName}`, inv.id)
         }
         else {
           inv.status = 'error'
           inv.protocol = res.protocol
           inv.errorMessage = (res.errors ?? []).map(e => `${e.code ? `[${e.code}] ` : ''}${e.message}`).join(' · ') || 'Falha na emissão.'
-          this.notify({ type: 'invoice_error', title: 'Erro na emissão da NFS-e', message: inv.errorMessage, channel: 'dashboard', severity: 'error' })
+          await this.notify({ type: 'invoice_error', title: 'Erro na emissão da NFS-e', message: inv.errorMessage, channel: 'dashboard', severity: 'error' })
           this.logAudit('emit_invoice', 'invoice', `Erro ao emitir NFS-e para ${inv.takerName}: ${inv.errorMessage}`, inv.id)
         }
       }
       catch (e) {
         inv.status = 'error'
         inv.errorMessage = (e as Error).message || 'Falha de comunicação com o servidor.'
-        this.notify({ type: 'invoice_error', title: 'Erro na emissão da NFS-e', message: inv.errorMessage, channel: 'dashboard', severity: 'error' })
+        await this.notify({ type: 'invoice_error', title: 'Erro na emissão da NFS-e', message: inv.errorMessage, channel: 'dashboard', severity: 'error' })
+        throw e
       }
+
+      return inv
     },
 
     /** Reconsulta uma NFS-e que ficou "em processamento" na SEFIN. */
@@ -1055,30 +1088,32 @@ export const useFinanceStore = defineStore('finance', {
       if (!status?.configured)
         return
 
-      try {
-        const res = await $fetch('/api/nfse/consultar', {
-          method: 'POST',
-          body: {
-            companyId: inv.companyId,
-            invoiceId: inv.id,
-            rpsNumber: inv.rpsNumber,
-            rpsSeries: inv.rpsSeries ?? '1',
-            rpsType: inv.rpsType ?? 1,
-          },
-        })
+      const res = await $fetch('/api/nfse/consultar', {
+        method: 'POST',
+        body: {
+          companyId: inv.companyId,
+          invoiceId: inv.id,
+          rpsNumber: inv.rpsNumber,
+          rpsSeries: inv.rpsSeries ?? '1',
+          rpsType: inv.rpsType ?? 1,
+        },
+      })
 
-        if (res.success && res.status === 'issued') {
-          inv.status = 'issued'
-          inv.invoiceNumber = res.invoiceNumber
-          inv.verificationCode = res.verificationCode
-          inv.issuedAt = res.issuedAt ?? new Date().toISOString()
-          inv.publicUrl = res.publicUrl
-          inv.xmlBase64 = res.xmlBase64
-          inv.environment = res.environment
-          this.notify({ type: 'invoice_issued', title: 'NFS-e localizada', message: `NFS-e ${res.invoiceNumber} confirmada para ${inv.takerName}.`, channel: 'dashboard', severity: 'success' })
-        }
+      if (res.success && res.status === 'issued') {
+        inv.status = 'issued'
+        inv.invoiceNumber = res.invoiceNumber
+        inv.verificationCode = res.verificationCode
+        inv.issuedAt = res.issuedAt ?? new Date().toISOString()
+        inv.publicUrl = res.publicUrl
+        inv.xmlBase64 = res.xmlBase64
+        inv.environment = res.environment
+        await this.notify({ type: 'invoice_issued', title: 'NFS-e localizada', message: `NFS-e ${res.invoiceNumber} confirmada para ${inv.takerName}.`, channel: 'dashboard', severity: 'success' })
       }
-      catch { /* mantém o status atual */ }
+      else if (!res.success) {
+        throw new Error((res.errors ?? []).map(error => error.message).join(' · ') || 'A NFS-e ainda não foi localizada.')
+      }
+
+      return inv
     },
 
     async cancelInvoice(id: string, reason?: string) {
@@ -1095,41 +1130,38 @@ export const useFinanceStore = defineStore('finance', {
       if (!inv.invoiceNumber)
         throw new Error('A nota ainda não possui número fiscal e não pode ser cancelada na prefeitura.')
 
-      try {
-        const res = await $fetch('/api/nfse/cancelar', {
-          method: 'POST',
-          body: {
-            companyId: inv.companyId,
-            invoiceId: inv.id,
-            numeroNfse: inv.invoiceNumber,
-            codigoMunicipio: inv.municipioIbge,
-            codigoCancelamento: '1',
-            motivo: reason || 'Cancelamento solicitado pelo usuário.',
-          },
-        })
+      const res = await $fetch('/api/nfse/cancelar', {
+        method: 'POST',
+        body: {
+          companyId: inv.companyId,
+          invoiceId: inv.id,
+          numeroNfse: inv.invoiceNumber,
+          codigoMunicipio: inv.municipioIbge,
+          codigoCancelamento: '1',
+          motivo: reason || 'Cancelamento solicitado pelo usuário.',
+        },
+      })
 
-        if (res.success) {
-          inv.status = 'cancelled'
-          inv.cancelledAt = res.cancelledAt ?? new Date().toISOString()
-          inv.cancelReason = reason
-          this.logAudit('cancel_invoice', 'invoice', `NFS-e ${inv.invoiceNumber} cancelada na SEFIN para ${inv.takerName}`, inv.id)
-        }
-        else {
-          inv.errorMessage = (res.errors ?? []).map(e => e.message).join(' · ') || 'Falha no cancelamento.'
-          this.notify({ type: 'invoice_error', title: 'Erro ao cancelar NFS-e', message: inv.errorMessage, channel: 'dashboard', severity: 'error' })
-        }
+      if (res.success) {
+        inv.status = 'cancelled'
+        inv.cancelledAt = res.cancelledAt ?? new Date().toISOString()
+        inv.cancelReason = reason
+        this.logAudit('cancel_invoice', 'invoice', `NFS-e ${inv.invoiceNumber} cancelada na SEFIN para ${inv.takerName}`, inv.id)
       }
-      catch (e) {
-        inv.errorMessage = (e as Error).message
-        this.notify({ type: 'invoice_error', title: 'Erro ao cancelar NFS-e', message: inv.errorMessage, channel: 'dashboard', severity: 'error' })
+      else {
+        inv.errorMessage = (res.errors ?? []).map(e => e.message).join(' · ') || 'Falha no cancelamento.'
+        await this.notify({ type: 'invoice_error', title: 'Erro ao cancelar NFS-e', message: inv.errorMessage, channel: 'dashboard', severity: 'error' })
+        throw new Error(inv.errorMessage)
       }
+
+      return inv
     },
 
     retryInvoice(id: string) {
       const inv = this.invoices.find(x => x.id === id)
 
       // Se ficou em processamento na SEFIN, reconsulta; senão reenvia.
-      if (inv?.status === 'processing' || (inv?.status === 'error' && inv.protocol))
+      if (inv?.status === 'processing' || (inv?.status === 'error' && inv.rpsNumber))
         return this.consultInvoice(id)
 
       return this.issueInvoice(id)

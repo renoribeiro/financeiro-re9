@@ -104,7 +104,7 @@ definePageMeta({ layout: 'blank' })
                 v-model="form.email"
                 label="E-mail"
                 type="email"
-                placeholder="reno@re9.online"
+                placeholder="usuario@empresa.com.br"
               />
             </VCol>
 

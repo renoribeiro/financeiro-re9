@@ -5,7 +5,7 @@
 //   • server/utils/nfse/            → config, certificado A1, GINFES (build/
 //                                      assinatura/SOAP/parse), tipos
 //   • server/api/nfse/*.ts          → endpoints emitir/cancelar/consultar/status
-//   • stores/finance.ts             → issueInvoice/cancelInvoice (real + mock)
+//   • stores/finance.ts             → issueInvoice/cancelInvoice (somente real)
 //
 // Documentação: docs/NFSE-FORTALEZA.md
 //

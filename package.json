@@ -1,6 +1,6 @@
 {
-  "name": "materio-vuetify-nuxtjs-admin-template-free",
-  "version": "1.1.0",
+  "name": "re9-financas",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@9.15.9",
@@ -18,7 +18,7 @@
     "build:icons": "tsx plugins/iconify/build-icons.ts",
     "postinstall": "nuxt prepare && npm run build:icons",
     "generate": "nuxt generate",
-    "test": "tsx tests/validators.test.ts && tsx tests/dateFilter.test.ts && tsx tests/financeLedger.test.ts && tsx tests/developmentDefaults.test.ts && tsx tests/migrations.test.ts"
+    "test": "tsx tests/validators.test.ts && tsx tests/authClaims.test.ts && tsx tests/dateFilter.test.ts && tsx tests/financeLedger.test.ts && tsx tests/developmentDefaults.test.ts && tsx tests/migrations.test.ts"
   },
   "dependencies": {
     "@floating-ui/dom": "1.6.8",
@@ -97,21 +97,28 @@
     "postcss": "^8",
     "stylelint-order": "6.0.3",
     "@types/video.js": "^7",
-    "brace-expansion@1.1.16": "2.1.3",
-    "brace-expansion@2.1.2": "2.1.3"
+    "brace-expansion@1.1.16": "2.1.4",
+    "brace-expansion@2.1.2": "2.1.4",
+    "brace-expansion@2.1.3": "2.1.4",
+    "brace-expansion@5.0.8": "5.0.9",
+    "fast-uri@3.1.4": "3.1.5",
+    "js-yaml@4.3.0": "4.3.1",
+    "nanoid@3.3.16": "3.3.18",
+    "nanoid@3.3.17": "3.3.18"
   },
   "pnpm": {
     "overrides": {
       "postcss": "^8",
       "stylelint-order": "6.0.3",
       "@types/video.js": "^7",
-      "brace-expansion@1.1.16": "2.1.3",
-      "brace-expansion@2.1.2": "2.1.3"
-    },
-    "auditConfig": {
-      "ignoreCves": [
-        "CVE-2026-14257"
-      ]
+      "brace-expansion@1.1.16": "2.1.4",
+      "brace-expansion@2.1.2": "2.1.4",
+      "brace-expansion@2.1.3": "2.1.4",
+      "brace-expansion@5.0.8": "5.0.9",
+      "fast-uri@3.1.4": "3.1.5",
+      "js-yaml@4.3.0": "4.3.1",
+      "nanoid@3.3.16": "3.3.18",
+      "nanoid@3.3.17": "3.3.18"
     }
   }
 }

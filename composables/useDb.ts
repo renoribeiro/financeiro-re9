@@ -1,4 +1,5 @@
 import type {
+  AppNotification,
   ChartAccount,
   Client,
   CostCenter,
@@ -31,7 +32,7 @@ function camelize(row: Record<string, unknown>): Record<string, unknown> {
 
 function clean(payload: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
-    Object.entries(payload).filter(([, value]) => value !== undefined && value !== ''),
+    Object.entries(payload).filter(([, value]) => value !== undefined),
   )
 }
 
@@ -118,6 +119,8 @@ export function useDb() {
         document: input.document,
         email: input.email,
         phone: input.phone,
+        bank_info: input.bankInfo,
+        category_id: input.categoryId,
         address: input.address,
         city: input.city,
         state: input.state,
@@ -133,6 +136,8 @@ export function useDb() {
         document: input.documentNumber,
         email: input.email,
         phone: input.phone,
+        bank_info: input.bankInfo,
+        category_id: input.categoryId,
         notes: input.notes,
         is_active: input.isActive,
       }, supplierFromRow) as Promise<Supplier>
@@ -160,6 +165,11 @@ export function useDb() {
         phone: input.phone,
         document: input.cpf,
         user_id: input.userId,
+        role_title: input.roleTitle,
+        pj_cnpj: input.pjCnpj,
+        bank_info: input.bankInfo,
+        hire_date: input.hireDate,
+        termination_date: input.terminationDate,
       }, employeeFromRow) as Promise<Employee>
     },
 
@@ -173,6 +183,10 @@ export function useDb() {
         phone: input.phone,
         document: input.document,
         role_title: input.roleTitle,
+        pj_cnpj: input.pjCnpj,
+        bank_info: input.bankInfo,
+        hire_date: input.hireDate,
+        termination_date: input.terminationDate,
       }, employeeFromRow) as Promise<Employee>
     },
 
@@ -569,6 +583,10 @@ export function useDb() {
         days_before: input.advanceDays,
         config: input,
         updated_at: new Date().toISOString(),
+      }, row => {
+        const data = camelize(row)
+
+        return { ...data, label: data.name, advanceDays: data.daysBefore }
       }) as Promise<NotificationRule>
     },
 
@@ -584,6 +602,27 @@ export function useDb() {
         throw new Error(error.message)
 
       return camelize(data as Record<string, unknown>)
+    },
+
+    createNotification(input: Omit<AppNotification, 'id' | 'companyId' | 'createdAt'>) {
+      return saveRow('notifications', undefined, {
+        user_id: input.userId ?? app.currentUserId,
+        type: input.type,
+        title: input.title,
+        message: input.message,
+        status: input.status,
+        metadata: { channel: input.channel, severity: input.severity },
+        sent_at: input.status === 'sent' ? new Date().toISOString() : undefined,
+      }, row => {
+        const data = camelize(row)
+        const metadata = (data.metadata ?? {}) as Record<string, unknown>
+
+        return {
+          ...data,
+          channel: metadata.channel ?? 'dashboard',
+          severity: metadata.severity ?? 'info',
+        }
+      }) as Promise<AppNotification>
     },
 
     async markAllNotificationsRead() {
@@ -609,12 +648,24 @@ export function useDb() {
         verification_code: input.verificationCode,
         protocol: input.protocol,
         service_code: input.lc116Item,
+        cnae_code: input.cnaeCode ?? input.cnae,
+        ctiss: input.ctiss,
+        iss_retido: input.issRetido,
         service_description: input.serviceDescription,
         amount: input.amount,
+        deductions_amount: input.deductionsAmount,
+        iss_amount: input.issAmount,
+        net_amount: input.netAmount,
         iss_rate: input.issRate,
+        municipio_ibge: input.municipioIbge,
+        competencia: input.competencia,
+        rps_type: input.rpsType,
         taker_name: input.takerName,
         taker_document: input.takerDocument,
         taker_email: input.takerEmail,
+        taker_address: input.takerAddress,
+        public_url: input.publicUrl,
+        cancel_reason: input.cancelReason,
         error_message: input.errorMessage,
         issued_at: input.issuedAt,
         cancelled_at: input.cancelledAt,

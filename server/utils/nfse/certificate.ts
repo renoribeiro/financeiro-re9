@@ -52,6 +52,14 @@ export interface LoadedCertificate {
 let cached: LoadedCertificate | null = null
 let cacheKey = ''
 
+function assertCertificateValidity(certificate: Pick<LoadedCertificate, 'notBefore' | 'notAfter'>) {
+  const now = Date.now()
+  if (new Date(certificate.notBefore).getTime() > now)
+    throw new Error('O certificado A1 ainda não está dentro do período de validade.')
+  if (new Date(certificate.notAfter).getTime() <= now)
+    throw new Error('O certificado A1 está expirado.')
+}
+
 /** Lê o .pfx do ambiente (base64 ou arquivo). Retorna null se não configurado. */
 function readPfxBuffer(): Buffer | null {
   const b64 = process.env.NFSE_CERT_PFX_BASE64?.trim()
@@ -88,10 +96,15 @@ export function loadCertificate(): LoadedCertificate {
 
   // Cache por hash do conteúdo+senha para não reparsear a cada requisição.
   const key = `${pfx.length}:${pfx.subarray(0, 32).toString('hex')}:${passphrase.length}`
-  if (cached && cacheKey === key)
+  if (cached && cacheKey === key) {
+    assertCertificateValidity(cached)
+
     return cached
+  }
 
   const parsed = parsePfx(pfx, passphrase)
+
+  assertCertificateValidity(parsed)
 
   cached = parsed
   cacheKey = key

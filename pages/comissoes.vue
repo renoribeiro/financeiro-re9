@@ -71,6 +71,7 @@ const headers = [
 // 👉 Detalhe
 const dialog = ref(false)
 const current = ref<Commission | null>(null)
+const actionError = ref('')
 
 const detail = computed(() => {
   if (!current.value)
@@ -89,13 +90,27 @@ function openDetail(c: Commission) {
   current.value = c
   dialog.value = true
 }
-function receiveInstallment(receivableId?: string) {
-  if (receivableId)
-    finance.receiveReceivable(receivableId)
+async function receiveInstallment(receivableId?: string) {
+  if (receivableId) {
+    actionError.value = ''
+    try {
+      await finance.receiveReceivable(receivableId)
+    }
+    catch (error) {
+      actionError.value = error instanceof Error ? error.message : 'Não foi possível receber a parcela.'
+    }
+  }
 }
-function paySplit(payableId?: string) {
-  if (payableId)
-    finance.payPayable(payableId)
+async function paySplit(payableId?: string) {
+  if (payableId) {
+    actionError.value = ''
+    try {
+      await finance.payPayable(payableId)
+    }
+    catch (error) {
+      actionError.value = error instanceof Error ? error.message : 'Não foi possível pagar o repasse.'
+    }
+  }
 }
 
 const editDialog = ref(false)
@@ -687,6 +702,14 @@ async function confirmDelete() {
       class="mt-4"
       :text="deleteError"
       @click:close="deleteError = ''"
+    />
+
+    <VAlert
+      v-if="actionError"
+      type="error"
+      variant="tonal"
+      class="mb-4"
+      :text="actionError"
     />
     <ConfirmDialog
       v-model="deleteDialog"

@@ -58,9 +58,17 @@ function onDragEnd() {
   draggingId.value = null
   dragOverStage.value = null
 }
-function onDrop(stage: FunnelStage) {
-  if (draggingId.value)
-    finance.moveFunnelCard(draggingId.value, stage)
+const actionError = ref('')
+
+async function onDrop(stage: FunnelStage) {
+  if (draggingId.value) {
+    try {
+      await finance.moveFunnelCard(draggingId.value, stage)
+    }
+    catch (error) {
+      actionError.value = error instanceof Error ? error.message : 'Não foi possível mover o lead.'
+    }
+  }
   draggingId.value = null
   dragOverStage.value = null
 }
@@ -117,12 +125,18 @@ function openEdit(c: FunnelCard) {
   editing.value = structuredClone(toRaw(c))
   dialog.value = true
 }
-function save() {
+async function save() {
   // lead exige ao menos o nome do contato
   if (!editing.value.contactName?.trim())
     return
-  finance.saveFunnelCard(editing.value)
-  dialog.value = false
+  actionError.value = ''
+  try {
+    await finance.saveFunnelCard(editing.value)
+    dialog.value = false
+  }
+  catch (error) {
+    actionError.value = error instanceof Error ? error.message : 'Não foi possível salvar o lead.'
+  }
 }
 </script>
 
@@ -154,6 +168,14 @@ function save() {
         </VBtn>
       </template>
     </AppPageHeader>
+
+    <VAlert
+      v-if="actionError"
+      type="error"
+      variant="tonal"
+      class="mb-4"
+      :text="actionError"
+    />
 
     <VAlert
       v-if="app.isAgency"

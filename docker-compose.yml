@@ -6,8 +6,8 @@
 # Let's Encrypt (certresolver "letsencrypt"). Não há serviço Traefik aqui — ele
 # é provido pelo Dokploy, igual ao seu docker-compose do Evolution.
 #
-# Diferente do Evolution, a RE9 Finanças no modo atual (dados em memória) NÃO
-# precisa de Postgres/Redis nem de variáveis de ambiente obrigatórias.
+# Os dados são persistidos no Supabase. URL e chave pública são obrigatórias;
+# integrações administrativas/fiscais exigem também seus segredos server-side.
 #
 # ATENCAO: ajuste o dominio abaixo e mantenha os nomes de router/service
 #          ("financeiro-re9") UNICOS entre todos os apps do seu Traefik.
@@ -38,7 +38,6 @@ services:
       HOST: 0.0.0.0
       PORT: 3000
       NITRO_PORT: 3000
-      # --- Integrações externas (opcionais; só ao ligar o backend real) ---
       # Preencha na aba "Environment" do Dokploy (não versione segredos aqui).
       # NUXT_PUBLIC_SUPABASE_URL: ${NUXT_PUBLIC_SUPABASE_URL}
       # NUXT_PUBLIC_SUPABASE_KEY: ${NUXT_PUBLIC_SUPABASE_KEY}
@@ -47,12 +46,10 @@ services:
       # GOOGLE_DRIVE_CLIENT_SECRET: ${GOOGLE_DRIVE_CLIENT_SECRET}
       # GOOGLE_DRIVE_REDIRECT_URI: ${GOOGLE_DRIVE_REDIRECT_URI}
       # GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY: ${GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY}
-      # EVOLUTION_API_URL: https://evo.re9imob.com.br
-      # EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
-      # SMTP_HOST: ${SMTP_HOST}
-      # SMTP_USER: ${SMTP_USER}
-      # SMTP_PASS: ${SMTP_PASS}
-      # ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      # NFSE_ENABLED: ${NFSE_ENABLED}
+      # NFSE_AMBIENTE: ${NFSE_AMBIENTE}
+      # NFSE_CERT_PFX_BASE64: ${NFSE_CERT_PFX_BASE64}
+      # NFSE_CERT_PASSWORD: ${NFSE_CERT_PASSWORD}
 
     restart: unless-stopped
 

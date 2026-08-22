@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useFinanceStore } from '@/stores/finance'
 import { useAppStore } from '@/stores/app'
-import { inMonth } from '@/utils/dateFilter'
+import { currentMonthKey, inMonth } from '@/utils/dateFilter'
 import type { Payable } from '@/types/finance'
 
 const finance = useFinanceStore()
@@ -12,26 +12,30 @@ useHead({ title: 'Contas a Pagar' })
 const search = ref('')
 const statusFilter = ref<string>('all')
 const costCenterFilter = ref<string | null>(null)
-const monthFilter = ref('all')
+const monthFilter = ref(currentMonthKey())
 
 const dueDates = computed(() => finance.companyPayables.map(p => p.dueDate))
 
 const filtered = computed(() => finance.companyPayables.filter(p => {
   const text = `${p.description} ${finance.supplierName(p.supplierId)} ${finance.employeeName(p.employeeId)}`.toLowerCase()
   const okSearch = !search.value || text.includes(search.value.toLowerCase())
-  const okStatus = statusFilter.value === 'all' || p.status === statusFilter.value
+
+  const okStatus = statusFilter.value === 'all'
+    || (statusFilter.value === 'overdue' ? isPayablePending(p) && daysUntil(p.dueDate) < 0 : p.status === statusFilter.value)
+
   const okCC = !costCenterFilter.value || p.costCenterId === costCenterFilter.value
   const okMonth = inMonth(p.dueDate, monthFilter.value)
 
   return okSearch && okStatus && okCC && okMonth
 }).sort((a, b) => a.dueDate.localeCompare(b.dueDate)))
 
-const open = computed(() => finance.companyPayables.filter(p => p.status === 'open'))
-const overdue = computed(() => finance.companyPayables.filter(p => p.status === 'overdue'))
+const open = computed(() => finance.companyPayables.filter(p => isPayablePending(p) && daysUntil(p.dueDate) >= 0))
+const overdue = computed(() => finance.companyPayables.filter(p => isPayablePending(p) && daysUntil(p.dueDate) < 0))
 
 // "Total cadastrado" desconsidera cancelados (não representam obrigação real)
 const registered = computed(() => finance.companyPayables.filter(p => p.status !== 'cancelled'))
 const sum = (arr: Payable[]) => arr.reduce((s, p) => s + p.amount, 0)
+const sumOutstanding = (arr: Payable[]) => arr.reduce((s, p) => s + payableOutstanding(p), 0)
 
 const paidThisMonth = computed(() => {
   const ms = new Date()
@@ -39,8 +43,10 @@ const paidThisMonth = computed(() => {
   ms.setDate(1)
   ms.setHours(0, 0, 0, 0)
 
-  return finance.companyPayables.filter(p => p.status === 'paid' && p.paidAt && new Date(p.paidAt) >= ms)
+  return finance.companyTransactions.filter(t => t.type === 'expense' && new Date(t.date) >= ms)
 })
+
+const paidThisMonthTotal = computed(() => paidThisMonth.value.reduce((sumValue, transaction) => sumValue + transactionExpense(transaction), 0))
 
 const headers = [
   { title: 'Descrição', key: 'description' },
@@ -55,6 +61,7 @@ const headers = [
 const statusItems = [
   { title: 'Todos', value: 'all' },
   { title: 'Em aberto', value: 'open' },
+  { title: 'Parcial', value: 'partial' },
   { title: 'Vencido', value: 'overdue' },
   { title: 'Pago', value: 'paid' },
   { title: 'Cancelado', value: 'cancelled' },
@@ -204,7 +211,7 @@ const payAmount = ref<number>(0)
 const payProof = ref('')
 function openPay(p: Payable) {
   payTarget.value = p
-  payAmount.value = p.amount - (p.paidAmount ?? 0)
+  payAmount.value = payableOutstanding(p)
   payProof.value = ''
   payDialog.value = true
 }
@@ -330,7 +337,7 @@ async function runRecurrences() {
       >
         <KpiCard
           title="Em aberto"
-          :value="formatBRL(sum(open))"
+          :value="formatBRL(sumOutstanding(open))"
           icon="ri-time-line"
           color="info"
           :subtitle="`${open.length} conta(s)`"
@@ -343,7 +350,7 @@ async function runRecurrences() {
       >
         <KpiCard
           title="Vencidas"
-          :value="formatBRL(sum(overdue))"
+          :value="formatBRL(sumOutstanding(overdue))"
           icon="ri-alarm-warning-line"
           color="error"
           :subtitle="`${overdue.length} conta(s)`"
@@ -356,7 +363,7 @@ async function runRecurrences() {
       >
         <KpiCard
           title="Pago no mês"
-          :value="formatBRL(sum(paidThisMonth))"
+          :value="formatBRL(paidThisMonthTotal)"
           icon="ri-checkbox-circle-line"
           color="success"
           :subtitle="`${paidThisMonth.length} pagamento(s)`"
@@ -443,13 +450,13 @@ async function runRecurrences() {
           <div>
             {{ formatDate(item.dueDate) }}
             <div
-              v-if="item.status === 'overdue'"
+              v-if="isPayablePending(item) && daysUntil(item.dueDate) < 0"
               class="text-caption text-error"
             >
               {{ Math.abs(daysUntil(item.dueDate)) }} dia(s) em atraso
             </div>
             <div
-              v-else-if="item.status === 'open' && daysUntil(item.dueDate) <= 7"
+              v-else-if="isPayablePending(item) && daysUntil(item.dueDate) <= 7"
               class="text-caption text-warning"
             >
               vence em {{ daysUntil(item.dueDate) }} dia(s)
@@ -457,7 +464,15 @@ async function runRecurrences() {
           </div>
         </template>
         <template #item.amount="{ item }">
-          <span class="font-weight-medium">{{ formatBRL(item.amount) }}</span>
+          <div class="text-end">
+            <span class="font-weight-medium">{{ formatBRL(item.amount) }}</span>
+            <div
+              v-if="item.status === 'partial'"
+              class="text-caption text-warning"
+            >
+              saldo {{ formatBRL(payableOutstanding(item)) }}
+            </div>
+          </div>
         </template>
         <template #item.status="{ item }">
           <StatusChip
@@ -468,7 +483,7 @@ async function runRecurrences() {
         <template #item.actions="{ item }">
           <div class="d-flex justify-end">
             <IconBtn
-              v-if="app.canManageFinance && ['open', 'overdue'].includes(item.status)"
+              v-if="app.canManageFinance && isPayablePending(item)"
               color="success"
               @click="openPay(item)"
             >
@@ -785,6 +800,9 @@ async function runRecurrences() {
             label="Valor pago"
             type="number"
             prefix="R$"
+            min="0.01"
+            :max="payTarget ? payableOutstanding(payTarget) : undefined"
+            step="0.01"
             class="mb-3"
           />
           <FileUpload

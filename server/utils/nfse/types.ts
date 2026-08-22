@@ -103,6 +103,7 @@ export interface EmitirNfseResult {
   invoiceNumber?: string
   verificationCode?: string
   protocol?: string
+  rpsNumber?: string
   issuedAt?: string
   publicUrl?: string
   xmlBase64?: string

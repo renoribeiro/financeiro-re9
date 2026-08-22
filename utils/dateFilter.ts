@@ -21,13 +21,19 @@ export const dateOnly = (iso: string): string => iso.slice(0, 10)
 /** ISO → chave de mês 'YYYY-MM'. */
 export const monthKey = (iso: string): string => iso.slice(0, 7)
 
+/** Chave do mês local atual (`YYYY-MM`), independente do fuso UTC. */
+export const currentMonthKey = (today = todayISO()): string => monthKey(today)
+
 /**
  * Monta as opções do filtro de mês a partir das datas presentes nos dados.
  * Retorna "Todos os meses" + um item por mês, do mais recente ao mais antigo.
  */
-export function buildMonthOptions(dates: Array<string | null | undefined>): Array<{ title: string; value: string }> {
+export function buildMonthOptions(dates: Array<string | null | undefined>, requiredMonth?: string): Array<{ title: string; value: string }> {
   const keys = Array.from(new Set(
-    dates.filter((d): d is string => Boolean(d)).map(monthKey),
+    [
+      ...dates.filter((d): d is string => Boolean(d)).map(monthKey),
+      ...(requiredMonth ? [requiredMonth] : []),
+    ],
   )).sort().reverse()
 
   return [

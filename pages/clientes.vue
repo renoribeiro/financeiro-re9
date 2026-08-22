@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { useFinanceStore } from '@/stores/finance'
-import { useDb } from '@/composables/useDb'
+import { useAppStore } from '@/stores/app'
 import type { Client } from '@/types/finance'
 
 const finance = useFinanceStore()
-const db = useDb()
+const app = useAppStore()
 
 useHead({ title: 'Clientes' })
 
@@ -44,7 +44,7 @@ async function save() {
   loading.value = true
   errorMsg.value = null
   try {
-    await db.createClient(form.value)
+    await finance.saveClient(form.value)
     dialog.value = false
   }
   catch (e) {
@@ -65,6 +65,7 @@ async function save() {
     >
       <template #actions>
         <VBtn
+          v-if="app.canManageFinance"
           prepend-icon="ri-add-line"
           @click="openNew"
         >

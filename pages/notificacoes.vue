@@ -18,9 +18,17 @@ const severityMeta: Record<AppNotification['severity'], { color: string; icon: s
   info: { color: 'info', icon: 'ri-information-line' },
 }
 
-function onClickNotification(n: AppNotification) {
-  if (n.status !== 'read')
-    finance.markNotificationRead(n.id)
+const actionError = ref('')
+
+async function onClickNotification(n: AppNotification) {
+  if (n.status !== 'read') {
+    try {
+      await finance.markNotificationRead(n.id)
+    }
+    catch (error) {
+      actionError.value = error instanceof Error ? error.message : 'Não foi possível marcar a notificação como lida.'
+    }
+  }
 }
 
 // 👉 Regras
@@ -33,19 +41,41 @@ const ruleHeaders = [
   { title: 'Ativa', key: 'isActive', align: 'end' as const },
 ]
 
-function toggleActive(rule: NotificationRule, value: boolean) {
-  finance.saveNotificationRule({ ...structuredClone(toRaw(rule)), isActive: value })
+async function toggleActive(rule: NotificationRule, value: boolean) {
+  actionError.value = ''
+  try {
+    await finance.saveNotificationRule({ ...structuredClone(toRaw(rule)), isActive: value })
+  }
+  catch (error) {
+    actionError.value = error instanceof Error ? error.message : 'Não foi possível atualizar a regra.'
+  }
 }
 
-function toggleChannel(rule: NotificationRule, channel: NotificationChannel) {
-  if (app.isReadOnly)
+async function markAllRead() {
+  actionError.value = ''
+  try {
+    await finance.markAllNotificationsRead()
+  }
+  catch (error) {
+    actionError.value = error instanceof Error ? error.message : 'Não foi possível marcar as notificações como lidas.'
+  }
+}
+
+async function toggleChannel(rule: NotificationRule, channel: NotificationChannel) {
+  if (app.isReadOnly || channel !== 'dashboard')
     return
 
   const channels = rule.channels.includes(channel)
     ? rule.channels.filter(c => c !== channel)
     : [...rule.channels, channel]
 
-  finance.saveNotificationRule({ ...structuredClone(toRaw(rule)), channels })
+  actionError.value = ''
+  try {
+    await finance.saveNotificationRule({ ...structuredClone(toRaw(rule)), channels })
+  }
+  catch (error) {
+    actionError.value = error instanceof Error ? error.message : 'Não foi possível atualizar os canais.'
+  }
 }
 </script>
 
@@ -61,12 +91,21 @@ function toggleChannel(rule: NotificationRule, channel: NotificationChannel) {
           v-if="tab === 'notifications' && finance.unreadNotificationCount > 0"
           variant="tonal"
           prepend-icon="ri-check-double-line"
-          @click="finance.markAllNotificationsRead()"
+          @click="markAllRead"
         >
           Marcar todas como lidas
         </VBtn>
       </template>
     </AppPageHeader>
+
+    <VAlert
+      v-if="actionError"
+      type="error"
+      variant="tonal"
+      class="mb-4"
+      :text="actionError"
+      closable
+    />
 
     <VCard>
       <VTabs
@@ -183,10 +222,10 @@ function toggleChannel(rule: NotificationRule, channel: NotificationChannel) {
                   label
                   :color="item.channels.includes(channel) ? 'primary' : undefined"
                   :variant="item.channels.includes(channel) ? 'flat' : 'outlined'"
-                  :disabled="app.isReadOnly"
+                  :disabled="app.isReadOnly || channel !== 'dashboard'"
                   @click="toggleChannel(item, channel)"
                 >
-                  {{ channelLabels[channel] }}
+                  {{ channelLabels[channel] }}{{ channel === 'dashboard' ? '' : ' (não integrado)' }}
                 </VChip>
               </div>
             </template>

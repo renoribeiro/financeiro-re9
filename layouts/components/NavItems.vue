@@ -115,6 +115,13 @@ const unread = computed(() => financeStore.unreadNotificationCount)
     <VerticalNavSectionTitle :item="{ heading: 'Cadastros' }" />
     <VerticalNavLink
       :item="{
+        title: 'Clientes',
+        icon: 'ri-user-3-line',
+        to: '/clientes',
+      }"
+    />
+    <VerticalNavLink
+      :item="{
         title: 'Fornecedores',
         icon: 'ri-store-2-line',
         to: '/fornecedores',
@@ -168,7 +175,7 @@ const unread = computed(() => financeStore.unreadNotificationCount)
     }"
   />
   <VerticalNavLink
-    v-if="appStore.canManageFinance"
+    v-if="appStore.canManageFinance || appStore.currentRole === 'accountant'"
     :item="{
       title: 'Histórico',
       icon: 'ri-history-line',

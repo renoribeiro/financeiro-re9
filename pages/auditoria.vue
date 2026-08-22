@@ -149,7 +149,7 @@ const jsonText = (value?: Record<string, unknown>) => value ? JSON.stringify(val
   <div>
     <AppPageHeader
       title="Histórico"
-      :subtitle="`Todas as ações e pontos de restauração — ${app.currentCompany.tradeName}`"
+      :subtitle="`Até 1.000 ações recentes e pontos de restauração — ${app.currentCompany.tradeName}`"
       icon="ri-history-line"
     />
 

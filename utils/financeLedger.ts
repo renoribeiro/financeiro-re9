@@ -1,4 +1,12 @@
-import type { Receivable, Transaction } from '@/types/finance'
+import type { Payable, Receivable, Transaction } from '@/types/finance'
+
+export function payableOutstanding(payable: Pick<Payable, 'amount' | 'paidAmount'>): number {
+  return Math.max(0, Number(payable.amount) - Number(payable.paidAmount ?? 0))
+}
+
+export function isPayablePending(payable: Pick<Payable, 'status'>): boolean {
+  return ['open', 'partial', 'overdue'].includes(payable.status)
+}
 
 export function receivableOutstanding(receivable: Pick<Receivable, 'amount' | 'receivedAmount'>): number {
   return Math.max(0, Number(receivable.amount) - Number(receivable.receivedAmount ?? 0))

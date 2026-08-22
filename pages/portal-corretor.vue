@@ -27,7 +27,7 @@ watch(
   () => {
     if (ownBroker.value)
       brokerId.value = ownBroker.value.id
-    else if (!brokerId.value && commissionBrokers.value.length)
+    else if (!app.isBroker && !brokerId.value && commissionBrokers.value.length)
       brokerId.value = commissionBrokers.value[0].value
   },
   { immediate: true },
@@ -134,7 +134,7 @@ const myFunnelByStage = computed(() =>
     <template v-else>
       <!-- Seletor de corretor (quando o usuário logado não é corretor) -->
       <VCard
-        v-if="!ownBroker"
+        v-if="!app.isBroker && !ownBroker"
         class="mb-6"
       >
         <VCardText>
@@ -149,6 +149,14 @@ const myFunnelByStage = computed(() =>
           />
         </VCardText>
       </VCard>
+
+      <VAlert
+        v-if="app.isBroker && !ownBroker"
+        type="error"
+        variant="tonal"
+        class="mb-6"
+        text="Seu usuário ainda não está vinculado a um cadastro de corretor. Solicite o vínculo a um administrador."
+      />
 
       <template v-if="broker">
         <div class="text-h6 mb-3">

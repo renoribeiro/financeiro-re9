@@ -3,7 +3,7 @@
 //   npx tsx tests/dateFilter.test.ts
 // ============================================================================
 
-import { buildMonthOptions, inMonth, isWithin, monthKey, presetWindow } from '../utils/dateFilter'
+import { buildMonthOptions, currentMonthKey, inMonth, isWithin, monthKey, presetWindow } from '../utils/dateFilter'
 
 let passed = 0
 let failed = 0
@@ -21,6 +21,7 @@ function assert(name: string, cond: boolean) {
 // ---- monthKey ---------------------------------------------------------------
 assert('monthKey extrai YYYY-MM', monthKey('2026-07-13') === '2026-07')
 assert('monthKey lida com ISO datetime', monthKey('2026-01-05T10:20:00.000Z') === '2026-01')
+assert('currentMonthKey usa a data local informada', currentMonthKey('2026-08-22') === '2026-08')
 
 // ---- inMonth ----------------------------------------------------------------
 assert('inMonth "all" aceita tudo', inMonth('2026-07-13', 'all'))
@@ -34,6 +35,10 @@ const opts = buildMonthOptions(['2026-05-29', '2026-07-11', '2026-06-23', '2026-
 assert('buildMonthOptions começa com "Todos os meses"', opts[0]?.value === 'all')
 assert('buildMonthOptions deduplica meses (3 meses + all = 4)', opts.length === 4)
 assert('buildMonthOptions ordena do mais recente ao mais antigo', opts[1]?.value === '2026-07' && opts[2]?.value === '2026-06' && opts[3]?.value === '2026-05')
+
+const optsWithCurrent = buildMonthOptions(['2026-07-11'], '2026-08')
+
+assert('buildMonthOptions inclui o mês atual mesmo sem lançamentos', optsWithCurrent.some(item => item.value === '2026-08'))
 
 // ---- presetWindow -----------------------------------------------------------
 const w7 = presetWindow('7d', '2026-07-13')

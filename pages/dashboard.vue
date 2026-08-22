@@ -38,10 +38,10 @@ const alerts = computed(() => {
 
   const dueSoon = m.weekPayables.value.filter(p => daysUntil(p.dueDate) >= 0)
   if (dueSoon.length)
-    list.push({ title: `${dueSoon.length} conta(s) vencem em até 7 dias`, message: `Programe ${formatBRL(m.sum(dueSoon))} de pagamentos.`, color: 'warning', icon: 'ri-calendar-event-line' })
+    list.push({ title: `${dueSoon.length} conta(s) vencem em até 7 dias`, message: `Programe ${formatBRL(m.sumPayables(dueSoon))} de pagamentos.`, color: 'warning', icon: 'ri-calendar-event-line' })
 
   const certDays = daysUntil(appStore.currentCompany.certificateExpiry)
-  if (certDays <= 60)
+  if (appStore.currentCompany.certificateExpiry && certDays <= 60)
     list.push({ title: 'Certificado A1 próximo do vencimento', message: `Vence em ${certDays} dias. Renove para não interromper a emissão de NFS-e.`, color: certDays <= 30 ? 'error' : 'warning', icon: 'ri-shield-keyhole-line' })
 
   if (!list.length)

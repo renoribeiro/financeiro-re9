@@ -44,8 +44,8 @@ export function useConsolidatedMetrics() {
       const expense = tx.reduce((s, t) => s + transactionExpense(t), 0)
 
       const openPayables = finance.payables
-        .filter(p => p.companyId === company.id && (p.status === 'open' || (p.status !== 'paid' && p.status !== 'cancelled' && daysUntil(p.dueDate) < 0)))
-        .reduce((s, p) => s + p.amount, 0)
+        .filter(p => p.companyId === company.id && isPayablePending(p))
+        .reduce((s, p) => s + payableOutstanding(p), 0)
 
       const overdue = finance.receivables
         .filter(r => r.companyId === company.id && r.status !== 'received' && r.status !== 'cancelled' && daysUntil(r.dueDate) < 0)

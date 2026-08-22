@@ -73,7 +73,10 @@ const initials = computed(() =>
           <VDivider class="my-2" />
 
           <!-- 👉 Configurações -->
-          <VListItem to="/configuracoes">
+          <VListItem
+            v-if="!appStore.isBroker"
+            to="/configuracoes"
+          >
             <template #prepend>
               <VIcon
                 class="me-2"

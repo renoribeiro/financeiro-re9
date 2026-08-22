@@ -66,17 +66,24 @@ function exportXLS(filename: string, sheet: string, header: string[], lines: (st
 
 // \uD83D\uDC49 Export PDF (via janela de impress\u00E3o do navegador)
 function printPDF(title: string, header: string[], lines: (string | number)[][]) {
+  const htmlEsc = (value: unknown) => String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('\'', '&#039;')
+
   const fmt = (v: string | number) => typeof v === 'number' ? v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : String(v)
-  const rows = lines.map(r => `<tr>${r.map((c, i) => `<td style="text-align:${typeof c === 'number' || i === r.length - 1 ? 'right' : 'left'}">${fmt(c)}</td>`).join('')}</tr>`).join('')
+  const rows = lines.map(r => `<tr>${r.map((c, i) => `<td style="text-align:${typeof c === 'number' || i === r.length - 1 ? 'right' : 'left'}">${htmlEsc(fmt(c))}</td>`).join('')}</tr>`).join('')
   const w = window.open('', '_blank')
   if (!w)
     return
-  w.document.write(`<html><head><title>${title}</title><style>
+  w.document.write(`<html><head><title>${htmlEsc(title)}</title><style>
     body{font-family:Arial,sans-serif;padding:24px;color:#333}
     h1{font-size:18px} table{width:100%;border-collapse:collapse;font-size:12px}
     th,td{border:1px solid #ddd;padding:6px 8px} th{background:#f5f5f5;text-align:left}
-  </style></head><body><h1>${title}</h1><div>${app.currentCompany.tradeName} \u00B7 ${from.value} a ${to.value}</div>
-  <table><thead><tr>${header.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>
+  </style></head><body><h1>${htmlEsc(title)}</h1><div>${htmlEsc(app.currentCompany.tradeName)} \u00B7 ${htmlEsc(from.value)} a ${htmlEsc(to.value)}</div>
+  <table><thead><tr>${header.map(h => `<th>${htmlEsc(h)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>
   <script>window.onload=function(){window.print()}<\/script></body></html>`)
   w.document.close()
 }
@@ -183,7 +190,12 @@ function exportAging() {
 // ===== Comissões =====
 const commissionRows = computed(() => finance.companyCommissions.map(c => {
   const sale = finance.saleById(c.saleId)
-  const received = finance.installmentsOf(c.id).filter(i => i.status === 'received').reduce((s, i) => s + i.amount, 0)
+
+  const received = finance.installmentsOf(c.id).reduce((sumValue, installment) => {
+    const receivable = finance.receivables.find(item => item.id === installment.receivableId)
+
+    return sumValue + Math.min(installment.amount, receivable?.receivedAmount ?? (installment.status === 'received' ? installment.amount : 0))
+  }, 0)
 
   return {
     broker: finance.employeeName(sale?.brokerId),

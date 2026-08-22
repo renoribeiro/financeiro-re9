@@ -1,7 +1,7 @@
 import { computed } from 'vue'
 import { useFinanceStore } from '@/stores/finance'
 import { useAppStore } from '@/stores/app'
-import type { Receivable } from '@/types/finance'
+import type { Payable, Receivable } from '@/types/finance'
 
 // ============================================================================
 // Métricas derivadas da empresa atual — usadas no dashboard, fluxo de caixa
@@ -47,14 +47,16 @@ export function useFinanceMetrics() {
   // 👉 Vencimentos da semana (próximos 7 dias, ainda não vencidos)
   // Piso `>= 0` para não misturar itens já vencidos (esses têm alerta próprio).
   const weekPayables = computed(() =>
-    finance.companyPayables.filter(p => p.status === 'open' && daysUntil(p.dueDate) >= 0 && daysUntil(p.dueDate) <= 7),
+    finance.companyPayables.filter(p => isPayablePending(p) && daysUntil(p.dueDate) >= 0 && daysUntil(p.dueDate) <= 7),
   )
 
   const weekReceivables = computed(() =>
     finance.companyReceivables.filter(r => isReceivablePending(r) && daysUntil(r.dueDate) >= 0 && daysUntil(r.dueDate) <= 7),
   )
 
-  const overduePayables = computed(() => finance.companyPayables.filter(p => p.status === 'overdue'))
+  const overduePayables = computed(() =>
+    finance.companyPayables.filter(p => isPayablePending(p) && daysUntil(p.dueDate) < 0),
+  )
 
   const overdueReceivables = computed(() =>
     finance.companyReceivables.filter(r => isReceivablePending(r) && daysUntil(r.dueDate) < 0),
@@ -62,6 +64,7 @@ export function useFinanceMetrics() {
 
   const sum = (arr: { amount: number }[]) => arr.reduce((s, x) => s + x.amount, 0)
   const sumReceivables = (arr: Receivable[]) => arr.reduce((s, x) => s + receivableOutstanding(x), 0)
+  const sumPayables = (arr: Payable[]) => arr.reduce((s, x) => s + payableOutstanding(x), 0)
 
   // 👉 Fluxo de caixa: últimos 30 dias (realizado) + acumulado
   const cashFlow30d = computed(() => {
@@ -118,8 +121,8 @@ export function useFinanceMetrics() {
         .reduce((s, r) => s + receivableOutstanding(r), 0)
 
       const futureOut = finance.companyPayables
-        .filter(p => ['open', 'overdue'].includes(p.status) && daysUntil(p.dueDate) <= days)
-        .reduce((s, p) => s + p.amount, 0)
+        .filter(p => isPayablePending(p) && daysUntil(p.dueDate) <= days)
+        .reduce((s, p) => s + payableOutstanding(p), 0)
 
       return { days, projected: currentBalance + futureIn - futureOut, futureIn, futureOut }
     })
@@ -180,6 +183,7 @@ export function useFinanceMetrics() {
     agency,
     sum,
     sumReceivables,
+    sumPayables,
     isRealEstate: computed(() => app.isRealEstate),
   }
 }

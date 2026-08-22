@@ -28,8 +28,8 @@ const upcoming = computed(() => {
     .map(r => ({ kind: 'income' as const, date: r.dueDate, description: r.description, party: r.clientName ?? '—', amount: receivableOutstanding(r) }))
 
   const outs = finance.companyPayables
-    .filter(p => ['open', 'overdue'].includes(p.status) && within(p.dueDate))
-    .map(p => ({ kind: 'expense' as const, date: p.dueDate, description: p.description, party: p.supplierId ? finance.supplierName(p.supplierId) : finance.employeeName(p.employeeId), amount: p.amount }))
+    .filter(p => isPayablePending(p) && within(p.dueDate))
+    .map(p => ({ kind: 'expense' as const, date: p.dueDate, description: p.description, party: p.supplierId ? finance.supplierName(p.supplierId) : finance.employeeName(p.employeeId), amount: payableOutstanding(p) }))
 
   return [...ins, ...outs].sort((a, b) => a.date.localeCompare(b.date))
 })

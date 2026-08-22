@@ -38,6 +38,7 @@ const headers = [
 const dialog = ref(false)
 const formRef = ref()
 const editing = ref<Partial<CostCenter>>({})
+const actionError = ref('')
 
 function openNew() {
   editing.value = { isActive: true }
@@ -51,8 +52,14 @@ async function save() {
   const { valid } = await formRef.value.validate()
   if (!valid)
     return
-  finance.saveCostCenter(editing.value)
-  dialog.value = false
+  actionError.value = ''
+  try {
+    await finance.saveCostCenter(editing.value)
+    dialog.value = false
+  }
+  catch (error) {
+    actionError.value = error instanceof Error ? error.message : 'Não foi possível salvar o centro de custo.'
+  }
 }
 
 // 👉 Ativar/desativar
@@ -62,9 +69,15 @@ function askToggle(c: CostCenter) {
   target.value = c
   confirm.value = true
 }
-function doToggle() {
-  if (target.value)
-    finance.toggleActive('costCenters', target.value.id)
+async function doToggle() {
+  if (target.value) {
+    try {
+      await finance.toggleActive('costCenters', target.value.id)
+    }
+    catch (error) {
+      actionError.value = error instanceof Error ? error.message : 'Não foi possível alterar o centro de custo.'
+    }
+  }
 }
 </script>
 
@@ -85,6 +98,14 @@ function doToggle() {
         </VBtn>
       </template>
     </AppPageHeader>
+
+    <VAlert
+      v-if="actionError"
+      type="error"
+      variant="tonal"
+      class="mb-4"
+      :text="actionError"
+    />
 
     <VCard>
       <VDataTable

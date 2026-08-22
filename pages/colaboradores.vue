@@ -64,6 +64,7 @@ const statusOptions = [
 const dialog = ref(false)
 const formRef = ref()
 const editing = ref<Partial<Employee>>({})
+const actionError = ref('')
 
 const showSalary = computed(() =>
   editing.value.employmentType === 'clt' || editing.value.employmentType === 'pj',
@@ -83,8 +84,14 @@ async function save() {
   const { valid } = await formRef.value.validate()
   if (!valid)
     return
-  finance.saveEmployee(editing.value)
-  dialog.value = false
+  actionError.value = ''
+  try {
+    await finance.saveEmployee(editing.value)
+    dialog.value = false
+  }
+  catch (error) {
+    actionError.value = error instanceof Error ? error.message : 'Não foi possível salvar o colaborador.'
+  }
 }
 </script>
 
@@ -105,6 +112,14 @@ async function save() {
         </VBtn>
       </template>
     </AppPageHeader>
+
+    <VAlert
+      v-if="actionError"
+      type="error"
+      variant="tonal"
+      class="mb-4"
+      :text="actionError"
+    />
 
     <VRow class="mb-2">
       <VCol

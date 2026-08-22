@@ -39,6 +39,7 @@ const headers = [
 const dialog = ref(false)
 const formRef = ref()
 const editing = ref<Partial<Supplier>>({})
+const actionError = ref('')
 
 const categoryOptions = computed(() =>
   finance.companyChartAccounts
@@ -62,8 +63,14 @@ async function save() {
   const { valid } = await formRef.value.validate()
   if (!valid)
     return
-  finance.saveSupplier(editing.value)
-  dialog.value = false
+  actionError.value = ''
+  try {
+    await finance.saveSupplier(editing.value)
+    dialog.value = false
+  }
+  catch (error) {
+    actionError.value = error instanceof Error ? error.message : 'Não foi possível salvar o fornecedor.'
+  }
 }
 
 // 👉 Ativar/desativar
@@ -73,9 +80,15 @@ function askToggle(s: Supplier) {
   target.value = s
   confirm.value = true
 }
-function doToggle() {
-  if (target.value)
-    finance.toggleActive('suppliers', target.value.id)
+async function doToggle() {
+  if (target.value) {
+    try {
+      await finance.toggleActive('suppliers', target.value.id)
+    }
+    catch (error) {
+      actionError.value = error instanceof Error ? error.message : 'Não foi possível alterar o fornecedor.'
+    }
+  }
 }
 </script>
 
@@ -96,6 +109,14 @@ function doToggle() {
         </VBtn>
       </template>
     </AppPageHeader>
+
+    <VAlert
+      v-if="actionError"
+      type="error"
+      variant="tonal"
+      class="mb-4"
+      :text="actionError"
+    />
 
     <VCard>
       <VCardText class="d-flex flex-wrap gap-4">

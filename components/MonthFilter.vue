@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { buildMonthOptions } from '@/utils/dateFilter'
+import { buildMonthOptions, currentMonthKey } from '@/utils/dateFilter'
 
 const props = defineProps<{
 
@@ -8,14 +8,15 @@ const props = defineProps<{
 }>()
 
 // 'all' | 'YYYY-MM'
-const model = defineModel<string>({ default: 'all' })
+const model = defineModel<string>({ default: currentMonthKey() })
+const currentMonth = currentMonthKey()
 
-const items = computed(() => buildMonthOptions(props.dates))
+const items = computed(() => buildMonthOptions(props.dates, currentMonth))
 
-// Se o mês selecionado sumir dos dados, volta para "Todos os meses".
+// Se uma seleção antiga sumir ao trocar de empresa, volta ao mês atual.
 watch(items, list => {
   if (!list.some(i => i.value === model.value))
-    model.value = 'all'
+    model.value = currentMonth
 })
 </script>
 

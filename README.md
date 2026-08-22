@@ -4,26 +4,24 @@ Sistema de gestão financeira **multi-empresa** para a RE9 Imóveis (imobiliári
 RE9 Online Branding (agência de marketing digital). Front-end construído sobre o tema
 **Materio (Nuxt 3 + Vuetify 3)**.
 
-> **Estado atual:** aplicação **front-end completa** com camada de dados em memória
-> (Pinia + seed realista das duas empresas), **autenticação com sessão + proteção de
-> rota por perfil**, log de auditoria, motor de comissões (parcelas + splits), motor de
-> recorrência, importador de CSV com validação real, dashboard consolidado e relatórios
-> com exportação (CSV/Excel/PDF). As integrações externas (NFS-e SEFIN via SOAP,
-> WhatsApp/Evolution, SMTP, Supabase/RLS) estão **prontas para ligar** — código real em
-> `infra/` e `supabase/`, ativáveis com credenciais (ver `docs/`).
+> **Estado atual:** aplicação SSR persistida no **Supabase/PostgreSQL**, com autenticação,
+> RLS multi-tenant, proteção de rotas por perfil, auditoria e restauração, motor atômico
+> de vendas/comissões/contas, fluxo de caixa, importação CSV e NFS-e GINFES/SEFIN.
+> A emissão fiscal só opera quando habilitada no servidor e com certificado A1 válido;
+> não existe fallback de emissão simulada. WhatsApp e e-mail ainda não possuem entrega
+> server-side e aparecem como indisponíveis na configuração de regras.
 >
-> **Documentação:** [`docs/AUDITORIA-2026-07.md`](docs/AUDITORIA-2026-07.md) (34 correções),
+> **Auditoria atual:** [`docs/AUDITORIA-PRODUCAO-2026-08-10.md`](docs/AUDITORIA-PRODUCAO-2026-08-10.md).
+> Histórico: [`docs/AUDITORIA-2026-07.md`](docs/AUDITORIA-2026-07.md) (34 correções),
 > [`docs/MELHORIAS-2026-07.md`](docs/MELHORIAS-2026-07.md) (roadmap) e
 > [`docs/IMPLEMENTACAO-MELHORIAS-2026-07.md`](docs/IMPLEMENTACAO-MELHORIAS-2026-07.md)
 > (o que já foi implementado × o que aguarda credenciais).
 >
-> **Login (demo):** `reno@re9.online` (Super Admin), `financeiro@re9imob.com.br`,
-> `lucas@re9imob.com.br` (Corretor) ou `contador@re9.online` — qualquer senha.
-
 ## Stack
 
 - Nuxt 3 · Vue 3 · TypeScript
 - Vuetify 3 (tema Materio) · ApexCharts · Pinia
+- Supabase (PostgreSQL, Auth, RLS e Storage)
 - Ícones RemixIcon (`ri-*`)
 
 ## Como rodar
@@ -37,11 +35,10 @@ node .output/server/index.mjs   # preview do build
 
 ## Multi-tenant e perfis
 
-- **Seletor de empresa** no topo (header) alterna entre RE9 Imóveis e RE9 Online.
-  Todos os dados são escopados pela empresa atual (simula o RLS do Supabase).
-- **Trocar de usuário/perfil** pelo avatar (canto superior direito): há usuários
-  com perfis Super Admin, Financeiro, Corretor e Contador. Perfis somente-leitura
-  (Contador/Visualizador) têm os botões de edição ocultos/desabilitados.
+- O seletor de empresa mostra somente empresas vinculadas ao usuário autenticado.
+- O banco aplica RLS por empresa e restringe o corretor às próprias vendas/comissões.
+- Contador e visualizador são perfis somente leitura; operações administrativas são
+  validadas tanto na interface quanto no banco/servidor.
 
 ## Módulos implementados
 
@@ -50,7 +47,7 @@ node .output/server/index.mjs   # preview do build
 | Visão geral | Dashboard (KPIs, fluxo 30d, DRE, alertas, indicadores por tipo de empresa) |
 | Financeiro | Contas a Pagar, Contas a Receber, Fluxo de Caixa, Plano de Contas, Centros de Custo |
 | Comercial (imobiliária) | Vendas, Funil de Vendas (kanban drag&drop), Empreendimentos, Comissões, Portal do Corretor |
-| Cadastros | Fornecedores, Colaboradores |
+| Cadastros | Clientes, Fornecedores, Colaboradores |
 | Fiscal & Relatórios | Notas Fiscais (NFS-e), Relatórios (DRE, comparativo, comissões, aging, centros de custo + export CSV) |
 | Visão geral (grupo) | Dashboard consolidado do Super Admin (totais e comparativo entre empresas) |
 | Sistema | Notificações + regras, Importador inteligente (CSV real), Auditoria, Configurações |
@@ -61,9 +58,9 @@ node .output/server/index.mjs   # preview do build
 types/finance.ts          # modelo de dados (TypeScript)
 utils/format.ts           # formatadores PT-BR (BRL, datas, documentos) — auto-import
 utils/labels.ts           # rótulos/cores de status e enums — auto-import
-data/seed.ts              # seed das 2 empresas e todas as entidades
 stores/app.ts             # contexto multi-tenant (empresa/usuário/perfil atual)
-stores/finance.ts         # entidades + getters por empresa + CRUD + motor de comissões
+stores/finance.ts         # cache reativo + CRUD persistido + motores financeiros
+composables/useDb.ts      # acesso tipado ao Supabase e RPCs transacionais
 composables/useFinanceMetrics.ts  # métricas do dashboard/fluxo/relatórios
 components/               # AppPageHeader, KpiCard, StatusChip, ConfirmDialog (globais)
 pages/                    # uma rota por módulo (file-based routing)
@@ -82,9 +79,12 @@ em `GET /api/health` e porta **3000**. Passo a passo completo em
 docker compose up --build   # descomente o bloco `ports` no docker-compose.yml
 ```
 
-## Próximos passos (backend)
+## Verificação antes de publicar
 
-1. Substituir o seed/Pinia por Supabase (PostgreSQL + RLS por `company_id`).
-2. Conectar a emissão de NFS-e à API SEFIN Fortaleza (ABRASF/SOAP, certificado A1).
-3. Notificações reais via Evolution API (WhatsApp) e SMTP.
-4. Importador inteligente com análise de planilhas pela Claude API.
+```sh
+pnpm verify
+pnpm audit --prod --audit-level high
+```
+
+As migrações em `supabase/migrations/` devem ser aplicadas e os advisors de segurança
+e desempenho do projeto remoto precisam ser revisados antes de promover a imagem.

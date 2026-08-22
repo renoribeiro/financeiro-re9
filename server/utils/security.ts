@@ -1,4 +1,5 @@
 import type { H3Event } from 'h3'
+import { normalizeAuthenticatedClaims } from './authClaims'
 import type { Database } from '@/types/database.types'
 // eslint-disable-next-line import/extensions
 import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
@@ -8,7 +9,8 @@ export type CompanyRole = 'super_admin' | 'admin' | 'financial' | 'broker' | 'ac
 const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>()
 
 export async function requireAuthenticatedUser(event: H3Event) {
-  const user = await serverSupabaseUser(event)
+  const user = normalizeAuthenticatedClaims(await serverSupabaseUser(event))
+
   if (!user)
     throw createError({ statusCode: 401, statusMessage: 'Não autenticado', message: 'Faça login para continuar.' })
 

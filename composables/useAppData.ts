@@ -19,6 +19,7 @@ const camelizeRows = (rows: unknown): Record<string, unknown>[] =>
 
 export interface AppData {
   companies: Company[]
+  users: UserProfile[]
   currentUser: UserProfile
   finance: Record<string, unknown[]>
 }
@@ -76,9 +77,29 @@ function mapInvoices(rows: Record<string, unknown>[]) {
     invoiceNumber: row.nfseNumber,
     rpsNumber: row.rpsNumber == null ? undefined : String(row.rpsNumber),
     lc116Item: row.serviceCode,
-    cnae: row.serviceCode ?? '',
+    cnae: row.cnaeCode ?? '',
     verificationCode: row.verificationCode,
     xmlBase64: row.xmlResponse,
+  }))
+}
+
+function mapNotifications(rows: Record<string, unknown>[]) {
+  return camelizeRows(rows).map(row => {
+    const metadata = (row.metadata ?? {}) as Record<string, unknown>
+
+    return {
+      ...row,
+      channel: metadata.channel ?? 'dashboard',
+      severity: metadata.severity ?? 'info',
+    }
+  })
+}
+
+function mapNotificationRules(rows: Record<string, unknown>[]) {
+  return camelizeRows(rows).map(row => ({
+    ...row,
+    label: row.name,
+    advanceDays: row.daysBefore,
   }))
 }
 
@@ -95,6 +116,8 @@ export async function loadAppData(): Promise<AppData | null> {
     const optional = (OPTIONAL_TABLES as readonly string[]).includes(t)
     if (results[i].error && !optional)
       throw results[i].error
+    if (results[i].error && optional)
+      console.warn(`[loadAppData] tabela opcional ${t} indisponível:`, results[i].error.message)
     data[t] = (results[i].data as unknown as Record<string, unknown>[]) ?? []
   })
 
@@ -114,6 +137,17 @@ export async function loadAppData(): Promise<AppData | null> {
       .map(m => ({ companyId: m.company_id, role: m.role })),
   }
 
+  const users = data.user_profiles.map(profileRow => ({
+    id: String(profileRow.id),
+    fullName: String(profileRow.full_name || profileRow.email || 'Usuário'),
+    email: String(profileRow.email || ''),
+    phone: profileRow.phone ? String(profileRow.phone) : undefined,
+    avatarColor: 'primary',
+    roles: members
+      .filter(member => member.user_id === profileRow.id)
+      .map(member => ({ companyId: member.company_id, role: member.role })),
+  })) satisfies UserProfile[]
+
   // Fallback robusto: se os vínculos não vieram na leitura direta da tabela,
   // busca-os pela RPC my_memberships() (sempre exposta; RLS aplica).
   if (currentUser.roles.length === 0) {
@@ -124,11 +158,16 @@ export async function loadAppData(): Promise<AppData | null> {
       console.warn('[loadAppData] memberships RPC indisponível:', cmErr.message)
   }
 
+  const hydratedCurrentUser = users.find(profileUser => profileUser.id === currentUser.id)
+  if (hydratedCurrentUser)
+    hydratedCurrentUser.roles = currentUser.roles
+
   // Fixups: colunas ausentes no banco que o app espera com default.
   const withActive = (rows: Record<string, unknown>[]) => rows.map(r => ({ isActive: true, ...r }))
 
   return {
     companies,
+    users,
     currentUser,
     finance: {
       chartAccounts: withActive(camelizeRows(data.chart_accounts)),
@@ -148,8 +187,8 @@ export async function loadAppData(): Promise<AppData | null> {
       funnelCards: camelizeRows(data.funnel_cards),
       funnelHistory: camelizeRows(data.funnel_history),
       invoices: mapInvoices(data.invoices),
-      notifications: camelizeRows(data.notifications),
-      notificationRules: camelizeRows(data.notification_rules),
+      notifications: mapNotifications(data.notifications),
+      notificationRules: mapNotificationRules(data.notification_rules),
     },
   }
 }
