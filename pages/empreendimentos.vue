@@ -2,6 +2,7 @@
 import { useFinanceStore } from '@/stores/finance'
 import { useAppStore } from '@/stores/app'
 import type { Development } from '@/types/finance'
+import { developmentMatchesSearch } from '@/utils/developmentSearch'
 
 const finance = useFinanceStore()
 const app = useAppStore()
@@ -13,10 +14,7 @@ const statusFilter = ref<'all' | 'active' | 'inactive'>('all')
 
 const filtered = computed(() => {
   return finance.companyDevelopments.filter(dv => {
-    const matchesSearch = !search.value
-      || dv.name.toLowerCase().includes(search.value.toLowerCase())
-      || dv.developer.toLowerCase().includes(search.value.toLowerCase())
-      || (dv.address ?? '').toLowerCase().includes(search.value.toLowerCase())
+    const matchesSearch = developmentMatchesSearch(dv, search.value)
 
     const matchesStatus = statusFilter.value === 'all'
       || (statusFilter.value === 'active' && dv.isActive)
@@ -86,15 +84,17 @@ async function doToggle() {
     />
 
     <VCard>
-      <VCardText class="d-flex flex-wrap gap-4">
+      <VCardText class="d-flex flex-wrap gap-4 align-center">
         <VTextField
           v-model="search"
+          class="development-search"
           aria-label="Buscar por nome, construtora ou endereço"
           placeholder="Buscar por nome, construtora ou endereço"
           prepend-inner-icon="ri-search-line"
           density="compact"
           style="max-inline-size: 320px;"
           clearable
+          hide-details
         />
         <VSpacer />
         <VBtnToggle
@@ -175,7 +175,7 @@ async function doToggle() {
                   </VCol>
                   <VCol cols="6">
                     <div class="text-caption text-disabled">
-                      % repasse ao corretor
+                      % da venda ao corretor
                     </div>
                     <div class="font-weight-medium">
                       {{ formatPercent(dv.brokerSplitPercentage) }}
@@ -244,3 +244,15 @@ async function doToggle() {
     />
   </div>
 </template>
+
+<style scoped>
+:deep(.development-search .v-field__input) {
+  align-items: center;
+  min-block-size: var(--v-input-control-height);
+  padding-block: 0;
+}
+
+:deep(.development-search .v-field__input > input) {
+  align-self: center;
+}
+</style>

@@ -16,8 +16,12 @@ const monthFilter = ref(currentMonthKey())
 
 const dueDates = computed(() => finance.companyPayables.map(p => p.dueDate))
 
+const beneficiaryName = (payable: Payable) => payable.supplierId
+  ? finance.supplierName(payable.supplierId)
+  : finance.employeeName(payable.employeeId)
+
 const filtered = computed(() => finance.companyPayables.filter(p => {
-  const text = `${p.description} ${finance.supplierName(p.supplierId)} ${finance.employeeName(p.employeeId)}`.toLowerCase()
+  const text = `${p.description} ${beneficiaryName(p)}`.toLowerCase()
   const okSearch = !search.value || text.includes(search.value.toLowerCase())
 
   const okStatus = statusFilter.value === 'all'
@@ -50,6 +54,7 @@ const paidThisMonthTotal = computed(() => paidThisMonth.value.reduce((sumValue, 
 
 const headers = [
   { title: 'Descrição', key: 'description' },
+  { title: 'Pago a', key: 'beneficiary', sortable: false },
   { title: 'Categoria', key: 'categoryId' },
   { title: 'Centro de custo', key: 'costCenterId' },
   { title: 'Vencimento', key: 'dueDate' },
@@ -388,8 +393,8 @@ async function runRecurrences() {
       <VCardText class="d-flex flex-wrap gap-4 align-center">
         <VTextField
           v-model="search"
-          aria-label="Buscar descrição ou fornecedor"
-          placeholder="Buscar descrição/fornecedor"
+          aria-label="Buscar descrição ou beneficiário"
+          placeholder="Buscar descrição/beneficiário"
           prepend-inner-icon="ri-search-line"
           density="compact"
           style="max-inline-size: 280px;"
@@ -429,16 +434,21 @@ async function runRecurrences() {
             <div class="font-weight-medium">
               {{ item.description }}
             </div>
-            <div class="text-caption text-disabled">
-              {{ item.supplierId ? finance.supplierName(item.supplierId) : finance.employeeName(item.employeeId) }}
+            <div
+              v-if="item.totalInstallments || item.recurrence !== 'once'"
+              class="text-caption text-disabled"
+            >
               <template v-if="item.totalInstallments">
-                · parcela {{ item.installmentNumber }}/{{ item.totalInstallments }}
+                Parcela {{ item.installmentNumber }}/{{ item.totalInstallments }}
               </template>
               <template v-else-if="item.recurrence !== 'once'">
-                · {{ recurrenceLabels[item.recurrence] }}
+                {{ recurrenceLabels[item.recurrence] }}
               </template>
             </div>
           </div>
+        </template>
+        <template #item.beneficiary="{ item }">
+          {{ beneficiaryName(item) }}
         </template>
         <template #item.categoryId="{ item }">
           {{ finance.accountName(item.categoryId) }}

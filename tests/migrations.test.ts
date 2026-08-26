@@ -73,6 +73,30 @@ const productionAuditMigration = readFileSync(
   'utf8',
 )
 
+const financialDescriptionsMigration = readFileSync(
+  new URL(
+    '../supabase/migrations/20260825222435_standardize_financial_descriptions.sql',
+    import.meta.url,
+  ),
+  'utf8',
+)
+
+const financialDescriptionOutliersMigration = readFileSync(
+  new URL(
+    '../supabase/migrations/20260825222618_refine_financial_description_outliers.sql',
+    import.meta.url,
+  ),
+  'utf8',
+)
+
+const commissionGraphSyncMigration = readFileSync(
+  new URL(
+    '../supabase/migrations/20260826005730_sync_commission_graph_in_place.sql',
+    import.meta.url,
+  ),
+  'utf8',
+)
+
 assert.match(
   migration,
   /select \* from public\.settle_receivable\([\s\S]+?\)\s+into r;/,
@@ -271,4 +295,88 @@ assert.match(
   'notificações do painel devem ser persistíveis por perfis financeiros e marcáveis como lidas',
 )
 
-console.log('Migrations: 33 passaram, 0 falharam.')
+assert.match(
+  financialDescriptionsMigration,
+  /create table if not exists private\.financial_description_backups[\s\S]+?revoke all on table private\.financial_description_backups from public, anon, authenticated/,
+  'o mapa antes/depois deve ser privado e persistente para permitir auditoria e reversão',
+)
+
+assert.match(
+  financialDescriptionsMigration,
+  /'payable'[\s\S]+?'receivable'[\s\S]+?'transaction'[\s\S]+?update public\.transactions[\s\S]+?update public\.payables[\s\S]+?update public\.receivables/,
+  'contas e movimentos de caixa correspondentes devem ser padronizados a partir do mesmo backup',
+)
+
+assert.match(
+  financialDescriptionsMigration,
+  /U&'Comiss\\00E3o de venda'[\s\S]+?U&'Repasse de comiss\\00E3o'[\s\S]+?U&'Executar ap\\00F3s recebimento da comiss\\00E3o\.'/,
+  'textos comerciais automáticos devem usar escapes Unicode seguros contra corrupção de encoding',
+)
+
+assert.doesNotMatch(
+  financialDescriptionsMigration,
+  /ComissÃ|â€”|apÃ/,
+  'a migração não pode persistir novamente sequências com mojibake',
+)
+
+assert.match(
+  financialDescriptionsMigration,
+  /drop function private\.standardize_receivable_description[\s\S]+?drop function private\.clean_financial_description/,
+  'funções auxiliares temporárias devem ser removidas depois da migração',
+)
+
+assert.match(
+  financialDescriptionOutliersMigration,
+  /'Adiantamento Quinzenal'[\s\S]+?'Pagamento OLX'[\s\S]+?'Pagamento dos Chips'[\s\S]+?'Pagamento Saldo Google%'/,
+  'a revisão pós-migração deve cobrir todas as exceções residuais identificadas',
+)
+
+assert.match(
+  financialDescriptionOutliersMigration,
+  /'refine_financial_description_outliers'[\s\S]+?'transaction'[\s\S]+?update public\.transactions[\s\S]+?update public\.payables/,
+  'o refinamento também deve ser reversível e manter o caixa sincronizado',
+)
+
+assert.match(
+  commissionGraphSyncMigration,
+  /broker_amount := round\(s\.sale_value \* broker_pct \/ 100, 2\)/,
+  'o repasse do corretor deve ser calculado diretamente sobre o valor da venda',
+)
+
+assert.doesNotMatch(
+  commissionGraphSyncMigration,
+  /broker_amount := round\(total \* broker_pct \/ 100, 2\)/,
+  'o repasse não pode voltar a usar a comissão total como base de cálculo',
+)
+
+assert.match(
+  commissionGraphSyncMigration,
+  /commission_installments_commission_number_uidx[\s\S]+?commission_splits_commission_beneficiary_uidx/,
+  'parcelas e tipos de repasse devem ter identidade única dentro da comissão',
+)
+
+assert.match(
+  commissionGraphSyncMigration,
+  /create or replace function private\.update_commission_graph_authorized[\s\S]+?return private\.sync_commission_graph/,
+  'a edição da comissão deve sincronizar o grafo existente sem recriá-lo',
+)
+
+assert.doesNotMatch(
+  commissionGraphSyncMigration,
+  /delete_commission_graph/,
+  'nenhum fluxo de edição da nova migração pode excluir o grafo da comissão',
+)
+
+assert.match(
+  commissionGraphSyncMigration,
+  /where not private\.commission_has_financial_activity\(c\.id\)[\s\S]+?perform private\.sync_commission_graph/,
+  'o reparo dos valores existentes deve ignorar registros com atividade financeira',
+)
+
+assert.match(
+  commissionGraphSyncMigration,
+  /private\.cancel_commission_graph[\s\S]+?set status = 'cancelled'[\s\S]+?update public\.receivables[\s\S]+?update public\.payables/,
+  'o cancelamento deve preservar registros e atualizar seus estados em vez de excluí-los',
+)
+
+console.log('Migrations: 47 passaram, 0 falharam.')

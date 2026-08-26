@@ -21,14 +21,26 @@ const formError = ref('')
 
 const typeOptions = Object.entries(developmentTypeLabels).map(([value, title]) => ({ title, value }))
 
+function brokerRateRule(value: unknown) {
+  const brokerRate = Number(value)
+  const commissionRate = Number(editing.value.commissionPercentage)
+
+  if (!Number.isFinite(brokerRate) || !Number.isFinite(commissionRate))
+    return true
+
+  return brokerRate <= commissionRate
+    || 'O repasse do corretor não pode exceder a comissão total sobre a venda.'
+}
+
 const commissionHint = computed(() => {
   if (editing.value.type === 'launch') {
     return 'Lançamento: a construtora paga a comissão integral à imobiliária, '
-      + 'que repassa a fatia definida abaixo ao corretor (gera conta a receber da construtora + conta a pagar de repasse).'
+      + 'e o percentual do corretor é calculado diretamente sobre o valor da venda '
+      + '(gera conta a receber da construtora + conta a pagar de repasse).'
   }
 
   return 'Avulso: a imobiliária recebe a comissão (do comprador ou consolidada) '
-    + 'e repassa a fatia definida ao corretor conforme a regra de recebimento.'
+    + 'e o percentual do corretor é calculado diretamente sobre o valor da venda.'
 })
 
 function resetForm() {
@@ -159,12 +171,12 @@ async function save() {
             >
               <VTextField
                 v-model.number="editing.brokerSplitPercentage"
-                label="% repasse ao corretor"
+                label="% corretor sobre a venda"
                 type="number"
                 min="0"
                 max="100"
                 suffix="%"
-                :rules="[requiredRule, percentRule]"
+                :rules="[requiredRule, percentRule, brokerRateRule]"
               />
             </VCol>
             <VCol cols="12">
