@@ -27,7 +27,7 @@
     "@supabase/supabase-js": "2.110.7",
     "@vueuse/core": "^10.11.1",
     "@vueuse/math": "^10.11.1",
-    "@xmldom/xmldom": "^0.9.10",
+    "@xmldom/xmldom": "^0.9.12",
     "apexcharts": "^3.54.1",
     "fast-xml-parser": "5.10.1",
     "node-forge": "^1.4.0",
@@ -41,7 +41,7 @@
     "vue3-perfect-scrollbar": "^2.0.0",
     "vuetify": "3.7.5",
     "webfontloader": "^1.6.28",
-    "xml-crypto": "^6.1.2",
+    "xml-crypto": "^6.3.2",
     "xmlbuilder2": "^4.0.3",
     "zod": "4.4.3"
   },
@@ -101,10 +101,16 @@
     "brace-expansion@2.1.2": "2.1.4",
     "brace-expansion@2.1.3": "2.1.4",
     "brace-expansion@5.0.8": "5.0.9",
-    "fast-uri@3.1.4": "3.1.5",
-    "js-yaml@4.3.0": "4.3.1",
+    "@xmldom/xmldom@0.8.13": "0.8.15",
+    "colord@2.9.3": "2.9.4",
+    "devalue@5.8.2": "5.9.2",
+    "fast-uri@3.1.4": "3.1.6",
+    "fast-uri@3.1.5": "3.1.6",
+    "js-yaml@4.3.0": "4.3.2",
+    "js-yaml@4.3.1": "4.3.2",
     "nanoid@3.3.16": "3.3.18",
-    "nanoid@3.3.17": "3.3.18"
+    "nanoid@3.3.17": "3.3.18",
+    "svgo@4.0.2": "4.1.0"
   },
   "pnpm": {
     "overrides": {
@@ -115,10 +121,16 @@
       "brace-expansion@2.1.2": "2.1.4",
       "brace-expansion@2.1.3": "2.1.4",
       "brace-expansion@5.0.8": "5.0.9",
-      "fast-uri@3.1.4": "3.1.5",
-      "js-yaml@4.3.0": "4.3.1",
+      "@xmldom/xmldom@0.8.13": "0.8.15",
+      "colord@2.9.3": "2.9.4",
+      "devalue@5.8.2": "5.9.2",
+      "fast-uri@3.1.4": "3.1.6",
+      "fast-uri@3.1.5": "3.1.6",
+      "js-yaml@4.3.0": "4.3.2",
+      "js-yaml@4.3.1": "4.3.2",
       "nanoid@3.3.16": "3.3.18",
-      "nanoid@3.3.17": "3.3.18"
+      "nanoid@3.3.17": "3.3.18",
+      "svgo@4.0.2": "4.1.0"
     }
   }
 }
