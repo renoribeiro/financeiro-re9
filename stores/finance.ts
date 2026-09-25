@@ -642,7 +642,11 @@ export const useFinanceStore = defineStore('finance', {
 
     async saveReceivable(
       r: Partial<Receivable>,
-      options: { initialReceipt?: ReceiptInput; externalInvoice?: ExternalInvoiceInput } = {},
+      options: {
+        initialReceipt?: ReceiptInput
+        externalInvoice?: ExternalInvoiceInput
+        adjustmentReason?: string
+      } = {},
     ) {
       if (!this.canWrite())
         return
@@ -816,7 +820,14 @@ export const useFinanceStore = defineStore('finance', {
     async saveSale(
       s: Partial<Sale>,
       generateCommission = true,
-      commissionOpts: { installments?: number; managerPct?: number; captadorPct?: number } = {},
+      commissionOpts: {
+        installments?: number
+        managerPct?: number
+        captadorPct?: number
+        calculationMode?: 'percentage' | 'manual_amount'
+        commissionPercentage?: number
+        commissionAmountOverride?: number
+      } = {},
     ) {
       if (!this.canWrite())
         return s.id

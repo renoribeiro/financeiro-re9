@@ -97,6 +97,14 @@ const commissionGraphSyncMigration = readFileSync(
   'utf8',
 )
 
+const commissionOverridesMigration = readFileSync(
+  new URL(
+    '../supabase/migrations/20260925105818_sale_commission_manual_overrides.sql',
+    import.meta.url,
+  ),
+  'utf8',
+)
+
 assert.match(
   migration,
   /select \* from public\.settle_receivable\([\s\S]+?\)\s+into r;/,
@@ -343,6 +351,36 @@ assert.match(
   'o repasse do corretor deve ser calculado diretamente sobre o valor da venda',
 )
 
+assert.match(
+  commissionOverridesMigration,
+  /commission_calculation_mode[\s\S]+?commission_percentage[\s\S]+?commission_amount_override/,
+  'a venda deve guardar a origem, a alíquota e o valor manual da comissão',
+)
+
+assert.match(
+  commissionOverridesMigration,
+  /target_commission_total[\s\S]+?private\.sync_commission_graph/,
+  'a sincronização da venda deve usar os termos gravados na própria venda',
+)
+
+assert.match(
+  commissionOverridesMigration,
+  /create or replace function public\.update_commission_receivable_entry[\s\S]+?private\.adjust_commission_receivable_amount[\s\S]+?select \* into result[\s\S]+?public\.update_receivable_entry/,
+  'o ajuste de uma conta vinculada deve atualizar a comissão e os dados cadastrais na mesma transação',
+)
+
+assert.match(
+  commissionOverridesMigration,
+  /expected_updated_at[\s\S]+?alterada por outro usu\\00E1rio/,
+  'o ajuste manual deve detectar edições concorrentes',
+)
+
+assert.match(
+  commissionOverridesMigration,
+  /not private\.can_manage_finance\(target_company\)[\s\S]+?Apenas a gest\\00E3o financeira pode alterar/,
+  'corretores não podem contornar a interface para alterar condições financeiras',
+)
+
 assert.doesNotMatch(
   commissionGraphSyncMigration,
   /broker_amount := round\(total \* broker_pct \/ 100, 2\)/,
@@ -379,4 +417,4 @@ assert.match(
   'o cancelamento deve preservar registros e atualizar seus estados em vez de excluí-los',
 )
 
-console.log('Migrations: 47 passaram, 0 falharam.')
+console.log('Migrations: 52 passaram, 0 falharam.')

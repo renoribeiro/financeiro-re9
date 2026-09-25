@@ -280,7 +280,11 @@ export function useDb() {
 
     async saveReceivable(
       input: Partial<Receivable>,
-      options: { initialReceipt?: ReceiptInput; externalInvoice?: ExternalInvoiceInput } = {},
+      options: {
+        initialReceipt?: ReceiptInput
+        externalInvoice?: ExternalInvoiceInput
+        adjustmentReason?: string
+      } = {},
     ) {
       const payload = {
         companyId: companyId(),
@@ -301,16 +305,27 @@ export function useDb() {
         commissionInstallmentId: input.commissionInstallmentId,
       }
 
+      const isLinkedCommission = Boolean(input.id && (input.commissionInstallmentId || input.saleId))
+
       const args: Record<string, unknown> = {
         target_id: input.id ?? null,
         payload,
         external_invoice: options.externalInvoice ?? null,
       }
 
-      if (!input.id)
+      if (isLinkedCommission) {
+        args.adjustment_reason = options.adjustmentReason ?? null
+        args.expected_updated_at = input.updatedAt ?? null
+      }
+      else if (!input.id) {
         args.initial_receipt = options.initialReceipt ?? null
+      }
 
-      const { data, error } = await db.rpc(input.id ? 'update_receivable_entry' : 'save_receivable_entry', args)
+      const rpcName = isLinkedCommission
+        ? 'update_commission_receivable_entry'
+        : input.id ? 'update_receivable_entry' : 'save_receivable_entry'
+
+      const { data, error } = await db.rpc(rpcName, args)
 
       if (error)
         throw new Error(error.message)
@@ -456,7 +471,14 @@ export function useDb() {
     async saveSale(
       input: Partial<Sale>,
       generateCommission = true,
-      options: { installments?: number; managerPct?: number; captadorPct?: number } = {},
+      options: {
+        installments?: number
+        managerPct?: number
+        captadorPct?: number
+        calculationMode?: 'percentage' | 'manual_amount'
+        commissionPercentage?: number
+        commissionAmountOverride?: number
+      } = {},
     ) {
       const { data, error } = await db.rpc('save_sale_with_commission', {
         target_id: input.id ?? null,
@@ -473,6 +495,11 @@ export function useDb() {
           saleDate: input.saleDate,
           status: input.status,
           notes: input.notes,
+          commissionCalculationMode: options.calculationMode ?? input.commissionCalculationMode,
+          commissionPercentage: options.commissionPercentage ?? input.commissionPercentage,
+          commissionAmountOverride: options.calculationMode === 'manual_amount'
+            ? options.commissionAmountOverride ?? input.commissionAmountOverride
+            : undefined,
         },
         generate_commission: generateCommission,
         installment_count: options.installments ?? 1,

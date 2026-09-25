@@ -75,6 +75,8 @@ const costCenterOptions = computed(() => finance.companyCostCenters.map(c => ({ 
 const dialog = ref(false)
 const formRef = ref()
 const editing = ref<Partial<Receivable>>({})
+const originalAmount = ref(0)
+const adjustmentReason = ref('')
 const originalReceivedAmount = ref(0)
 const receiptSituation = ref<'received' | 'unreceived'>('unreceived')
 const reopenReason = ref('')
@@ -88,6 +90,13 @@ const snackbarText = ref('')
 const snackbarColor = ref<'success' | 'error'>('success')
 
 const receiptMethodItems = Object.entries(receiptMethodLabels).map(([value, title]) => ({ title, value }))
+
+const isLinkedCommission = computed(() => Boolean(
+  editing.value.id && (editing.value.commissionInstallmentId || editing.value.saleId),
+))
+
+const amountWasAdjusted = computed(() => isLinkedCommission.value
+  && Number(editing.value.amount ?? 0) !== originalAmount.value)
 
 function newReceipt(amount = 0): ReceiptInput {
   return {
@@ -119,6 +128,8 @@ function showMessage(text: string, color: 'success' | 'error' = 'success') {
 function openNew() {
   editing.value = { invoiceRule: 'on_receive', recurrence: 'once', dueDate: todayISO(), status: 'open' }
   originalReceivedAmount.value = 0
+  originalAmount.value = 0
+  adjustmentReason.value = ''
   receiptSituation.value = 'unreceived'
   reopenReason.value = ''
   initialSituation.value = 'pending'
@@ -128,6 +139,8 @@ function openNew() {
 }
 function openEdit(r: Receivable) {
   editing.value = structuredClone(toRaw(r))
+  originalAmount.value = Number(r.amount)
+  adjustmentReason.value = ''
   originalReceivedAmount.value = r.receivedAmount ?? 0
   receiptSituation.value = originalReceivedAmount.value > 0 ? 'received' : 'unreceived'
   reopenReason.value = ''
@@ -168,6 +181,11 @@ async function save() {
 
     return
   }
+  if (amountWasAdjusted.value && !adjustmentReason.value.trim()) {
+    showMessage('Informe o motivo do ajuste manual da comissão.', 'error')
+
+    return
+  }
   saving.value = true
   let accountWasSaved = false
   try {
@@ -179,12 +197,14 @@ async function save() {
     const saved = await finance.saveReceivable(editing.value, {
       initialReceipt: !editing.value.id && initialSituation.value === 'received' ? initialReceipt.value : undefined,
       externalInvoice: editing.value.invoiceRule === 'manual' ? externalInvoice.value : undefined,
+      adjustmentReason: amountWasAdjusted.value ? adjustmentReason.value.trim() : undefined,
     })
 
     if (!saved)
       throw new Error('Não foi possível salvar a conta.')
     accountWasSaved = true
     editing.value = structuredClone(toRaw(saved))
+    originalAmount.value = Number(saved.amount)
     if (shouldReopen) {
       const reopened = await finance.reopenReceivable(saved.id, reopenReason.value.trim())
       if (!reopened)
@@ -618,6 +638,19 @@ async function doReverse() {
           >
             <VRow>
               <VCol
+                v-if="isLinkedCommission"
+                cols="12"
+              >
+                <VAlert
+                  type="info"
+                  variant="tonal"
+                  density="compact"
+                >
+                  Esta conta pertence a uma comissão. Alterar o valor atualizará também a parcela,
+                  o total da comissão e a condição registrada na venda, sem criar novos lançamentos.
+                </VAlert>
+              </VCol>
+              <VCol
                 v-if="editing.id && originalReceivedAmount > 0"
                 cols="12"
                 class="account-dialog__choice"
@@ -717,6 +750,20 @@ async function doReverse() {
                   type="number"
                   prefix="R$"
                   :rules="[requiredRule, positiveRule]"
+                />
+              </VCol>
+              <VCol
+                v-if="amountWasAdjusted"
+                cols="12"
+              >
+                <VTextarea
+                  v-model="adjustmentReason"
+                  label="Motivo do ajuste manual"
+                  placeholder="Ex.: alíquota negociada foi alterada"
+                  rows="2"
+                  :rules="[requiredRule]"
+                  hint="O motivo ficará registrado na auditoria junto aos valores anterior e novo."
+                  persistent-hint
                 />
               </VCol>
               <VCol

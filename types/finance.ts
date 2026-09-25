@@ -204,6 +204,7 @@ export interface Receivable {
   proofUrl?: string
   notes?: string
   createdAt: string
+  updatedAt?: string
 }
 
 export type TransactionType = 'income' | 'expense'
@@ -281,6 +282,7 @@ export interface Development {
 
 export type SaleStatus = 'in_progress' | 'completed' | 'cancelled'
 export type PaymentMethod = 'cash' | 'financing' | 'installments_developer'
+export type CommissionCalculationMode = 'percentage' | 'manual_amount'
 
 export interface Sale {
   id: string
@@ -296,7 +298,12 @@ export interface Sale {
   saleDate: string
   status: SaleStatus
   notes?: string
+  commissionCalculationMode?: CommissionCalculationMode
+  commissionPercentage?: number
+  commissionAmountOverride?: number
+  developmentCommissionPercentageSnapshot?: number
   createdAt: string
+  updatedAt?: string
 }
 
 export type FunnelStage = 'lead' | 'visit' | 'proposal' | 'contract' | 'deed'

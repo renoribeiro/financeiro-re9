@@ -2,7 +2,11 @@
 import { useFinanceStore } from '@/stores/finance'
 import { useAppStore } from '@/stores/app'
 import { type DateWindow, isWithin } from '@/utils/dateFilter'
-import type { Development, Sale } from '@/types/finance'
+import type { CommissionCalculationMode, Development, Sale } from '@/types/finance'
+import {
+  calculateCommissionTotal,
+  equivalentCommissionPercentage,
+} from '@/utils/commissionCalculation'
 
 const finance = useFinanceStore()
 const app = useAppStore()
@@ -69,12 +73,73 @@ const statusOptions = Object.entries(saleStatusMeta).map(([value, m]) => ({ titl
 const dialog = ref(false)
 const formRef = ref()
 const editing = ref<Partial<Sale>>({})
-const commission = ref({ installments: 1, managerPct: 0, captadorPct: 0 })
+
+const commission = ref<{
+  installments: number
+  managerPct: number
+  captadorPct: number
+  calculationMode: CommissionCalculationMode
+  percentage: number
+  totalAmount: number
+}>({
+  installments: 1,
+  managerPct: 0,
+  captadorPct: 0,
+  calculationMode: 'percentage',
+  percentage: 0,
+  totalAmount: 0,
+})
+
+const commissionTouched = ref(false)
 const saving = ref(false)
 const formError = ref('')
 const detailsDialog = ref(false)
 const selected = ref<Sale | null>(null)
 const quickDevelopmentDialog = ref(false)
+
+const selectedDevelopment = computed(() =>
+  finance.companyDevelopments.find(item => item.id === editing.value.developmentId),
+)
+
+const commissionTotalPreview = computed(() => calculateCommissionTotal({
+  mode: commission.value.calculationMode,
+  saleValue: Number(editing.value.saleValue ?? 0),
+  percentage: Number(commission.value.percentage ?? 0),
+  manualAmount: Number(commission.value.totalAmount ?? 0),
+}))
+
+const equivalentPercentage = computed(() => equivalentCommissionPercentage(
+  commissionTotalPreview.value,
+  Number(editing.value.saleValue ?? 0),
+))
+
+const calculationModeOptions = [
+  { title: 'Calcular por alíquota', value: 'percentage' },
+  { title: 'Definir valor manual', value: 'manual_amount' },
+]
+
+function applyDevelopmentCommission(force = false) {
+  if (!selectedDevelopment.value || (!force && commissionTouched.value))
+    return
+
+  commission.value.calculationMode = 'percentage'
+  commission.value.percentage = Number(selectedDevelopment.value.commissionPercentage ?? 0)
+  commission.value.totalAmount = 0
+}
+
+function changeCalculationMode(mode: CommissionCalculationMode) {
+  const currentTotal = commissionTotalPreview.value
+
+  commission.value.calculationMode = mode
+  if (mode === 'manual_amount')
+    commission.value.totalAmount = currentTotal
+  commissionTouched.value = true
+}
+
+watch(() => editing.value.developmentId, () => {
+  if (dialog.value)
+    applyDevelopmentCommission()
+})
 
 function openNew() {
   editing.value = {
@@ -83,7 +148,15 @@ function openNew() {
     saleDate: todayISO(),
     saleValue: 0,
   }
-  commission.value = { installments: 1, managerPct: 0, captadorPct: 0 }
+  commission.value = {
+    installments: 1,
+    managerPct: 0,
+    captadorPct: 0,
+    calculationMode: 'percentage',
+    percentage: 0,
+    totalAmount: 0,
+  }
+  commissionTouched.value = false
   formError.value = ''
   dialog.value = true
 }
@@ -97,7 +170,11 @@ function openEdit(s: Sale) {
     installments: existingCommission ? finance.installmentsOf(existingCommission.id).length : 1,
     managerPct: splits.find(sp => sp.beneficiaryType === 'manager')?.percentage ?? 0,
     captadorPct: splits.find(sp => sp.beneficiaryType === 'captador')?.percentage ?? 0,
+    calculationMode: s.commissionCalculationMode ?? 'percentage',
+    percentage: Number(s.commissionPercentage ?? 0),
+    totalAmount: Number(s.commissionAmountOverride ?? existingCommission?.totalAmount ?? 0),
   }
+  commissionTouched.value = true
   formError.value = ''
   detailsDialog.value = false
   dialog.value = true
@@ -109,6 +186,8 @@ function openQuickDevelopment() {
 
 function selectCreatedDevelopment(development: Development) {
   editing.value.developmentId = development.id
+  commissionTouched.value = false
+  nextTick(() => applyDevelopmentCommission(true))
   quickDevelopmentDialog.value = false
 }
 
@@ -116,6 +195,16 @@ async function save() {
   const { valid } = await formRef.value.validate()
   if (!valid)
     return
+  if (commission.value.calculationMode === 'percentage' && Number(commission.value.percentage) <= 0) {
+    formError.value = 'Informe uma alíquota de comissão maior que zero.'
+
+    return
+  }
+  if (commission.value.calculationMode === 'manual_amount' && commissionTotalPreview.value <= 0) {
+    formError.value = 'Informe um valor manual de comissão maior que zero.'
+
+    return
+  }
   saving.value = true
   formError.value = ''
   try {
@@ -123,6 +212,11 @@ async function save() {
       installments: Number(commission.value.installments) || 1,
       managerPct: Number(commission.value.managerPct) || 0,
       captadorPct: Number(commission.value.captadorPct) || 0,
+      calculationMode: commission.value.calculationMode,
+      commissionPercentage: Number(commission.value.percentage) || 0,
+      commissionAmountOverride: commission.value.calculationMode === 'manual_amount'
+        ? commissionTotalPreview.value
+        : undefined,
     })
     dialog.value = false
   }
@@ -504,6 +598,86 @@ async function confirmDelete() {
                 cols="12"
                 md="4"
               >
+                <VSelect
+                  :model-value="commission.calculationMode"
+                  label="Forma de cálculo"
+                  :items="calculationModeOptions"
+                  :readonly="!app.canManageFinance"
+                  @update:model-value="changeCalculationMode"
+                />
+              </VCol>
+              <VCol
+                cols="12"
+                md="4"
+              >
+                <VTextField
+                  v-if="commission.calculationMode === 'percentage'"
+                  v-model.number="commission.percentage"
+                  label="Alíquota da comissão"
+                  type="number"
+                  min="0.000001"
+                  max="100"
+                  step="0.000001"
+                  suffix="%"
+                  :readonly="!app.canManageFinance"
+                  :rules="[requiredRule, positiveRule]"
+                  @update:model-value="commissionTouched = true"
+                />
+                <VTextField
+                  v-else
+                  :model-value="equivalentPercentage"
+                  label="Alíquota equivalente"
+                  suffix="%"
+                  readonly
+                  hint="Informativa; o valor manual prevalece"
+                  persistent-hint
+                />
+              </VCol>
+              <VCol
+                cols="12"
+                md="4"
+              >
+                <VTextField
+                  v-if="commission.calculationMode === 'manual_amount'"
+                  v-model.number="commission.totalAmount"
+                  label="Valor total da comissão"
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  prefix="R$"
+                  :readonly="!app.canManageFinance"
+                  :rules="[requiredRule, positiveRule]"
+                  @update:model-value="commissionTouched = true"
+                />
+                <VTextField
+                  v-else
+                  :model-value="commissionTotalPreview"
+                  label="Valor total da comissão"
+                  prefix="R$"
+                  readonly
+                />
+              </VCol>
+              <VCol
+                v-if="selectedDevelopment && app.canManageFinance"
+                cols="12"
+                class="d-flex align-center justify-space-between pt-0"
+              >
+                <span class="text-caption text-medium-emphasis">
+                  Padrão de {{ selectedDevelopment.name }}: {{ selectedDevelopment.commissionPercentage }}%
+                </span>
+                <VBtn
+                  type="button"
+                  size="small"
+                  variant="text"
+                  @click="commissionTouched = false; applyDevelopmentCommission(true)"
+                >
+                  Restaurar padrão
+                </VBtn>
+              </VCol>
+              <VCol
+                cols="12"
+                md="4"
+              >
                 <VTextField
                   v-model.number="commission.installments"
                   label="Parcelas da comissão"
@@ -540,8 +714,9 @@ async function confirmDelete() {
                   variant="tonal"
                   density="compact"
                 >
-                  Ao salvar, a comissão é gerada automaticamente conforme as regras do empreendimento
-                  (parcelas + splits informados).
+                  Comissão prevista: <strong>{{ formatBRL(commissionTotalPreview) }}</strong>.
+                  A alíquota do empreendimento é apenas o padrão inicial; a condição salva nesta venda
+                  será preservada mesmo que o empreendimento seja alterado depois.
                 </VAlert>
               </VCol>
             </VRow>
