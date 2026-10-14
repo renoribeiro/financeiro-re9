@@ -101,12 +101,53 @@ const selectedDevelopment = computed(() =>
   finance.companyDevelopments.find(item => item.id === editing.value.developmentId),
 )
 
-const commissionTotalPreview = computed(() => calculateCommissionTotal({
-  mode: commission.value.calculationMode,
-  saleValue: Number(editing.value.saleValue ?? 0),
-  percentage: Number(commission.value.percentage ?? 0),
-  manualAmount: Number(commission.value.totalAmount ?? 0),
-}))
+const commissionHasFinancialHistory = computed(() => {
+  if (!editing.value.id)
+    return false
+
+  const currentCommission = finance.commissionOfSale(editing.value.id)
+  if (!currentCommission)
+    return false
+
+  const receivableIds = finance.installmentsOf(currentCommission.id)
+    .map(item => item.receivableId)
+    .filter((id): id is string => Boolean(id))
+
+  const payableIds = finance.splitsOf(currentCommission.id)
+    .map(item => item.payableId)
+    .filter((id): id is string => Boolean(id))
+
+  return finance.companyReceivables.some(item =>
+    receivableIds.includes(item.id) && Number(item.receivedAmount ?? 0) > 0,
+  )
+    || finance.companyPayables.some(item =>
+      payableIds.includes(item.id) && Number(item.paidAmount ?? 0) > 0,
+    )
+    || finance.companyTransactions.some(item =>
+      (item.receivableId && receivableIds.includes(item.receivableId))
+      || (item.payableId && payableIds.includes(item.payableId)),
+    )
+    || finance.companyInvoices.some(item =>
+      item.status !== 'cancelled'
+      && Boolean(item.receivableId && receivableIds.includes(item.receivableId)),
+    )
+})
+
+const commissionTotalPreview = computed(() => {
+  const existingCommission = editing.value.id
+    ? finance.commissionOfSale(editing.value.id)
+    : undefined
+
+  if (commissionHasFinancialHistory.value && existingCommission)
+    return Number(existingCommission.totalAmount ?? 0)
+
+  return calculateCommissionTotal({
+    mode: commission.value.calculationMode,
+    saleValue: Number(editing.value.saleValue ?? 0),
+    percentage: Number(commission.value.percentage ?? 0),
+    manualAmount: Number(commission.value.totalAmount ?? 0),
+  })
+})
 
 const equivalentPercentage = computed(() => equivalentCommissionPercentage(
   commissionTotalPreview.value,
@@ -467,6 +508,19 @@ async function confirmDelete() {
               class="mb-4"
               :text="formError"
             />
+            <VAlert
+              v-if="commissionHasFinancialHistory"
+              type="error"
+              variant="tonal"
+              density="compact"
+              class="mb-4"
+            >
+              A comissão possui recebimento, pagamento, transação ou nota fiscal.
+              Estorne/reabra os lançamentos antes de alterar valores ou parcelas.
+              <div class="text-caption mt-1">
+                Os dados comerciais da venda podem ser alterados e salvos; os valores financeiros vinculados serão preservados.
+              </div>
+            </VAlert>
             <VRow>
               <VCol
                 cols="12"
@@ -602,7 +656,7 @@ async function confirmDelete() {
                   :model-value="commission.calculationMode"
                   label="Forma de cálculo"
                   :items="calculationModeOptions"
-                  :readonly="!app.canManageFinance"
+                  :readonly="!app.canManageFinance || commissionHasFinancialHistory"
                   @update:model-value="changeCalculationMode"
                 />
               </VCol>
@@ -619,7 +673,7 @@ async function confirmDelete() {
                   max="100"
                   step="0.000001"
                   suffix="%"
-                  :readonly="!app.canManageFinance"
+                  :readonly="!app.canManageFinance || commissionHasFinancialHistory"
                   :rules="[requiredRule, positiveRule]"
                   @update:model-value="commissionTouched = true"
                 />
@@ -645,7 +699,7 @@ async function confirmDelete() {
                   min="0.01"
                   step="0.01"
                   prefix="R$"
-                  :readonly="!app.canManageFinance"
+                  :readonly="!app.canManageFinance || commissionHasFinancialHistory"
                   :rules="[requiredRule, positiveRule]"
                   @update:model-value="commissionTouched = true"
                 />
@@ -658,7 +712,7 @@ async function confirmDelete() {
                 />
               </VCol>
               <VCol
-                v-if="selectedDevelopment && app.canManageFinance"
+                v-if="selectedDevelopment && app.canManageFinance && !commissionHasFinancialHistory"
                 cols="12"
                 class="d-flex align-center justify-space-between pt-0"
               >
@@ -684,6 +738,7 @@ async function confirmDelete() {
                   type="number"
                   min="1"
                   max="12"
+                  :readonly="commissionHasFinancialHistory"
                 />
               </VCol>
               <VCol
@@ -695,6 +750,7 @@ async function confirmDelete() {
                   label="% gerente (opcional)"
                   type="number"
                   suffix="%"
+                  :readonly="commissionHasFinancialHistory"
                 />
               </VCol>
               <VCol
@@ -706,6 +762,7 @@ async function confirmDelete() {
                   label="% captador (opcional)"
                   type="number"
                   suffix="%"
+                  :readonly="commissionHasFinancialHistory"
                 />
               </VCol>
               <VCol cols="12">
