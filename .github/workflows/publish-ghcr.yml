@@ -42,8 +42,8 @@ jobs:
         env:
           SUPABASE_URL: https://example.supabase.co
           SUPABASE_KEY: sb_publishable_ci_placeholder
-      - name: Block high and critical vulnerabilities
-        run: pnpm audit --prod --audit-level high
+      - name: Block unreviewed production vulnerabilities
+        run: node scripts/check-production-audit.mjs
 
   publish:
     needs: quality
