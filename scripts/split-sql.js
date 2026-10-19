@@ -1,4 +1,4 @@
-import fs from 'fs'
+import fs from 'node:fs'
 
 const statements = JSON.parse(fs.readFileSync('docs/migracao/statements.json', 'utf8'))
 

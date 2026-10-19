@@ -1,4 +1,4 @@
-import fs from 'fs'
+import fs from 'node:fs'
 
 const statements = JSON.parse(fs.readFileSync('docs/migracao/statements.json', 'utf8'))
 
@@ -10,6 +10,7 @@ const chunkSize = 40
 
 for (let i = 0; i < statements.length; i += chunkSize) {
   const chunk = statements.slice(i, i + chunkSize)
+
   chunks.push(chunk)
 }
 

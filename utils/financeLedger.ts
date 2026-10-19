@@ -8,6 +8,16 @@ export function isPayablePending(payable: Pick<Payable, 'status'>): boolean {
   return ['open', 'partial', 'overdue'].includes(payable.status)
 }
 
+export function totalPayableOutstanding(
+  payables: Array<Pick<Payable, 'amount' | 'paidAmount' | 'status'>>,
+): number {
+  const totalInCents = payables
+    .filter(isPayablePending)
+    .reduce((sum, payable) => sum + Math.round(payableOutstanding(payable) * 100), 0)
+
+  return totalInCents / 100
+}
+
 export function receivableOutstanding(receivable: Pick<Receivable, 'amount' | 'receivedAmount'>): number {
   return Math.max(0, Number(receivable.amount) - Number(receivable.receivedAmount ?? 0))
 }

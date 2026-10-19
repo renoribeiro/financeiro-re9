@@ -3,6 +3,7 @@ import {
   isReceivablePending,
   payableOutstanding,
   receivableOutstanding,
+  totalPayableOutstanding,
   transactionEffect,
   transactionExpense,
   transactionIncome,
@@ -26,6 +27,14 @@ assert('conta parcialmente paga considera somente o saldo restante', payableOuts
 assert('saldo a pagar nunca fica negativo', payableOutstanding({ amount: 1000, paidAmount: 1200 }) === 0)
 assert('pagamento parcial continua pendente', isPayablePending({ status: 'partial' }))
 assert('conta paga não entra na projeção', !isPayablePending({ status: 'paid' }))
+assert('saldo total inclui ajuste residual de conta parcial vencida', totalPayableOutstanding([
+  { amount: 2462.65, paidAmount: 2462.25, status: 'partial' },
+]) === 0.4)
+assert('saldo total inclui todas as obrigações pendentes e ignora as liquidadas', totalPayableOutstanding([
+  { amount: 2462.65, paidAmount: 2462.25, status: 'partial' },
+  { amount: 1000, paidAmount: 0, status: 'overdue' },
+  { amount: 500, paidAmount: 500, status: 'paid' },
+]) === 1000.4)
 assert('baixa parcial considera somente o saldo restante', receivableOutstanding({ amount: 1000, receivedAmount: 350 }) === 650)
 assert('saldo nunca fica negativo', receivableOutstanding({ amount: 1000, receivedAmount: 1200 }) === 0)
 assert('status parcial continua pendente', isReceivablePending({ status: 'partial' }))

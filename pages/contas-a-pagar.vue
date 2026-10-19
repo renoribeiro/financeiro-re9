@@ -33,13 +33,14 @@ const filtered = computed(() => finance.companyPayables.filter(p => {
   return okSearch && okStatus && okCC && okMonth
 }).sort((a, b) => a.dueDate.localeCompare(b.dueDate)))
 
-const open = computed(() => finance.companyPayables.filter(p => isPayablePending(p) && daysUntil(p.dueDate) >= 0))
+// O saldo principal representa toda obrigação ainda pendente. Contas vencidas
+// também fazem parte desse total; o card "Vencidas" é apenas um recorte de alerta.
+const outstandingPayables = computed(() => finance.companyPayables.filter(isPayablePending))
 const overdue = computed(() => finance.companyPayables.filter(p => isPayablePending(p) && daysUntil(p.dueDate) < 0))
 
 // "Total cadastrado" desconsidera cancelados (não representam obrigação real)
 const registered = computed(() => finance.companyPayables.filter(p => p.status !== 'cancelled'))
 const sum = (arr: Payable[]) => arr.reduce((s, p) => s + p.amount, 0)
-const sumOutstanding = (arr: Payable[]) => arr.reduce((s, p) => s + payableOutstanding(p), 0)
 
 const paidThisMonth = computed(() => {
   const ms = new Date()
@@ -341,11 +342,11 @@ async function runRecurrences() {
         lg="3"
       >
         <KpiCard
-          title="Em aberto"
-          :value="formatBRL(sumOutstanding(open))"
+          title="Saldo total a pagar"
+          :value="formatBRL(totalPayableOutstanding(outstandingPayables))"
           icon="ri-time-line"
           color="info"
-          :subtitle="`${open.length} conta(s)`"
+          :subtitle="`${outstandingPayables.length} conta(s)`"
         />
       </VCol>
       <VCol
@@ -355,7 +356,7 @@ async function runRecurrences() {
       >
         <KpiCard
           title="Vencidas"
-          :value="formatBRL(sumOutstanding(overdue))"
+          :value="formatBRL(totalPayableOutstanding(overdue))"
           icon="ri-alarm-warning-line"
           color="error"
           :subtitle="`${overdue.length} conta(s)`"

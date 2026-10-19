@@ -1,30 +1,38 @@
-import fs from 'fs'
+import fs from 'node:fs'
 
 const rawData = JSON.parse(fs.readFileSync('docs/migracao/parsed_sheets.json', 'utf8'))
 
 function excelSerialToISO(serial) {
-  if (!serial) return new Date().toISOString().slice(0, 10)
+  if (!serial)
+    return new Date().toISOString().slice(0, 10)
   if (typeof serial === 'string') {
     if (serial.includes('/')) {
       const parts = serial.split('/')
-      if (parts.length === 3) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+      if (parts.length === 3)
+        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
     }
-    if (serial.includes('-')) return serial
+    if (serial.includes('-'))
+      return serial
   }
   const s = Number(serial)
-  if (isNaN(s)) return new Date().toISOString().slice(0, 10)
+  if (isNaN(s))
+    return new Date().toISOString().slice(0, 10)
   const utcDays = Math.floor(s - 25569)
   const utcValue = utcDays * 86400 * 1000
+
   return new Date(utcValue).toISOString().slice(0, 10)
 }
 
 const companyId = 'e11042be-3d22-4048-9380-ac71e8dc9252' // RE9 Imóveis Ltda
 
 // 1. Entradas (Income Received)
-const entradasRaw = rawData['Entradas'] || []
+const entradasRaw = rawData.Entradas || []
+
 const entradaRows = entradasRaw.slice(3).filter(r => {
-  if (!r || !r[0] || r[6] === undefined || typeof r[6] !== 'number') return false
+  if (!r || !r[0] || r[6] === undefined || typeof r[6] !== 'number')
+    return false
   const desc = String(r[1] || r[0] || '').toUpperCase()
+
   return !desc.includes('TOTAL')
 })
 
@@ -41,10 +49,13 @@ const parsedEntradas = entradaRows.map((r, i) => {
 })
 
 // 2. Saidas (Expense Paid)
-const saidasRaw = rawData['Saidas'] || []
+const saidasRaw = rawData.Saidas || []
+
 const saidaRows = saidasRaw.slice(3).filter(r => {
-  if (!r || !r[0] || r[5] === undefined || typeof r[5] !== 'number') return false
+  if (!r || !r[0] || r[5] === undefined || typeof r[5] !== 'number')
+    return false
   const desc = String(r[1] || r[0] || '').toUpperCase()
+
   return !desc.includes('TOTAL')
 })
 
@@ -62,14 +73,18 @@ const parsedSaidas = saidaRows.map((r, i) => {
 
 // 3. Contas a Receber
 const recsRaw = rawData['Contas a Receber'] || []
+
 const recRows = recsRaw.slice(3).filter(r => {
-  if (!r || !r[0] || r[2] === undefined || typeof r[2] !== 'number') return false
+  if (!r || !r[0] || r[2] === undefined || typeof r[2] !== 'number')
+    return false
   const desc = String(r[0] || '').toUpperCase()
+
   return !desc.includes('TOTAL')
 })
 
 const parsedReceivables = recRows.map((r, i) => {
   const statusStr = String(r[5] || '').trim().toLowerCase()
+
   return {
     description: String(r[0] || '').trim(),
     clientName: String(r[1] || '').trim(),
@@ -83,14 +98,18 @@ const parsedReceivables = recRows.map((r, i) => {
 
 // 4. Contas a Pagar
 const paysRaw = rawData['Contas a Pagar'] || []
+
 const payRows = paysRaw.slice(3).filter(r => {
-  if (!r || !r[0] || r[3] === undefined || typeof r[3] !== 'number') return false
+  if (!r || !r[0] || r[3] === undefined || typeof r[3] !== 'number')
+    return false
   const desc = String(r[0] || '').toUpperCase()
+
   return !desc.includes('TOTAL')
 })
 
 const parsedPayables = payRows.map((r, i) => {
   const statusStr = String(r[6] || '').trim().toLowerCase()
+
   return {
     description: String(r[0] || '').trim(),
     supplierName: String(r[1] || '').trim(),
@@ -106,9 +125,12 @@ const parsedPayables = payRows.map((r, i) => {
 
 // 5. Custos Fixos
 const fixosRaw = rawData['Custos Fixos'] || []
+
 const fixoRows = fixosRaw.slice(3).filter(r => {
-  if (!r || !r[0] || r[1] === undefined || typeof r[1] !== 'number') return false
+  if (!r || !r[0] || r[1] === undefined || typeof r[1] !== 'number')
+    return false
   const desc = String(r[0] || '').toUpperCase()
+
   return !desc.includes('TOTAL') && !desc.includes('CONFIGURACOES') && !desc.includes('ALIQUOTA') && !desc.includes('PROVISAO')
 })
 

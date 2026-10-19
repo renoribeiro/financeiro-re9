@@ -1,4 +1,4 @@
-import fs from 'fs'
+import fs from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
 
 const supabaseUrl = process.env.SUPABASE_URL || 'https://nzrwlmjhbbmqlwfxqgsd.supabase.co'
@@ -75,7 +75,8 @@ async function main() {
       settled_at: e.date,
     }).select().single()
 
-    if (setErr) console.error('Error inserting settlement:', setErr.message)
+    if (setErr)
+      console.error('Error inserting settlement:', setErr.message)
 
     // Insert transaction
     const { error: trErr } = await supabase.from('transactions').insert({
@@ -89,7 +90,7 @@ async function main() {
       payment_method: 'Pix',
     })
 
-    if (trErr) console.error('Error inserting transaction:', trErr.message)
+    if (trErr) { console.error('Error inserting transaction:', trErr.message) }
     else {
       incomeCount++
       incomeSum += e.amount
@@ -129,7 +130,8 @@ async function main() {
       proof_url: s.proof,
     }).select().single()
 
-    if (setErr) console.error('Error inserting settlement:', setErr.message)
+    if (setErr)
+      console.error('Error inserting settlement:', setErr.message)
 
     const { error: trErr } = await supabase.from('transactions').insert({
       company_id: CID,
@@ -143,7 +145,7 @@ async function main() {
       proof_url: s.proof,
     })
 
-    if (trErr) console.error('Error inserting transaction:', trErr.message)
+    if (trErr) { console.error('Error inserting transaction:', trErr.message) }
     else {
       expenseCount++
       expenseSum += s.amount
@@ -154,6 +156,7 @@ async function main() {
 
   // 5. Import Contas a Receber Pendentes (open receivables)
   const openRecs = normalized.receivables.filter(r => r.status === 'open')
+
   console.log(`Importing ${openRecs.length} Pending Contas a Receber...`)
   let recPendingSum = 0
 
@@ -167,7 +170,9 @@ async function main() {
       status: 'open',
       notes: r.notes,
     })
-    if (error) console.error('Error inserting open receivable:', error.message)
+
+    if (error)
+      console.error('Error inserting open receivable:', error.message)
     else recPendingSum += r.amount
   }
 
@@ -175,6 +180,7 @@ async function main() {
 
   // 6. Import Contas a Pagar Pendentes (open payables)
   const openPays = normalized.payables.filter(p => p.status === 'open')
+
   console.log(`Importing ${openPays.length} Pending Contas a Pagar...`)
   let payPendingSum = 0
 
@@ -188,7 +194,9 @@ async function main() {
       status: 'open',
       notes: p.notes,
     })
-    if (error) console.error('Error inserting open payable:', error.message)
+
+    if (error)
+      console.error('Error inserting open payable:', error.message)
     else payPendingSum += p.amount
   }
 
@@ -196,7 +204,8 @@ async function main() {
 
   // 7. Import Comissões & Vendas
   console.log('Importing Comissões & Vendas from sheet...')
-  const comissRaw = sheetData['Comissoes'] || []
+
+  const comissRaw = sheetData.Comissoes || []
   const comissRows = comissRaw.slice(3).filter(r => r && r[0] && r[5] !== undefined && typeof r[5] === 'number')
 
   for (const c of comissRows) {

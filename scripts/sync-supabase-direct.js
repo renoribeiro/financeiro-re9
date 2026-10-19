@@ -1,5 +1,5 @@
-import fs from 'fs'
-import crypto from 'crypto'
+import fs from 'node:fs'
+import crypto from 'node:crypto'
 
 const normalized = JSON.parse(fs.readFileSync('docs/migracao/parsed_normalized.json', 'utf8'))
 const sheetData = JSON.parse(fs.readFileSync('docs/migracao/parsed_sheets.json', 'utf8'))
@@ -8,31 +8,45 @@ const CID = 'e11042be-3d22-4048-9380-ac71e8dc9252' // RE9 Imóveis Ltda
 const UID = 'f1754497-6d06-4e7d-8a82-e4869472d7d7' // reno@re9.online
 
 function sqlEsc(val) {
-  if (val === null || val === undefined) return 'NULL'
-  if (typeof val === 'number') return String(val)
-  if (typeof val === 'boolean') return val ? 'TRUE' : 'FALSE'
-  return `'${String(val).replace(/'/g, "''")}'`
+  if (val === null || val === undefined)
+    return 'NULL'
+  if (typeof val === 'number')
+    return String(val)
+  if (typeof val === 'boolean')
+    return val ? 'TRUE' : 'FALSE'
+
+  return `'${String(val).replace(/'/g, '\'\'')}'`
 }
 
 function mapPaymentMethod(pm) {
-  if (!pm) return 'pix'
+  if (!pm)
+    return 'pix'
   const lower = String(pm).toLowerCase()
-  if (lower.includes('pix')) return 'pix'
-  if (lower.includes('cart') || lower.includes('card')) return 'card'
-  if (lower.includes('transf')) return 'transfer'
-  if (lower.includes('bol')) return 'boleto'
-  if (lower.includes('dinh') || lower.includes('cash')) return 'cash'
-  if (lower.includes('cheq')) return 'check'
+  if (lower.includes('pix'))
+    return 'pix'
+  if (lower.includes('cart') || lower.includes('card'))
+    return 'card'
+  if (lower.includes('transf'))
+    return 'transfer'
+  if (lower.includes('bol'))
+    return 'boleto'
+  if (lower.includes('dinh') || lower.includes('cash'))
+    return 'cash'
+  if (lower.includes('cheq'))
+    return 'check'
+
   return 'other'
 }
 
 function toUUID(str) {
   const hash = crypto.createHash('md5').update(str).digest('hex')
+
   return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`
 }
 
 const supplierNames = [...new Set(normalized.saidas.map(s => s.beneficiaryName).filter(Boolean))]
 const supplierMap = new Map()
+
 supplierNames.forEach(name => supplierMap.set(name, toUUID(`supplier:${name}`)))
 
 const cleanupStmts = [
@@ -41,12 +55,14 @@ const cleanupStmts = [
   `DELETE FROM payables WHERE company_id = '${CID}';`,
   `DELETE FROM receivables WHERE company_id = '${CID}';`,
   `DELETE FROM commissions WHERE company_id = '${CID}';`,
-  `DELETE FROM sales WHERE company_id = '${CID}';`
+  `DELETE FROM sales WHERE company_id = '${CID}';`,
 ]
 
 const supplierStmts = []
+
 supplierNames.forEach(name => {
   const id = supplierMap.get(name)
+
   supplierStmts.push(`INSERT INTO suppliers (id, company_id, legal_name, trade_name, is_active) VALUES ('${id}', '${CID}', ${sqlEsc(name)}, ${sqlEsc(name)}, TRUE) ON CONFLICT (id) DO NOTHING;`)
 })
 
@@ -86,17 +102,19 @@ normalized.saidas.forEach((s, idx) => {
 // 4. Pending Receivables & Payables
 normalized.receivables.filter(r => r.status === 'open').forEach((r, idx) => {
   const recId = toUUID(`rec:open:${idx}`)
+
   receivableStmts.push(`INSERT INTO receivables (id, company_id, description, client_name, amount, due_date, status, notes) VALUES ('${recId}', '${CID}', ${sqlEsc(r.description)}, ${sqlEsc(r.clientName)}, ${r.amount}, ${sqlEsc(r.dueDate)}, 'open', ${sqlEsc(r.notes)});`)
 })
 
 normalized.payables.filter(p => p.status === 'open').forEach((p, idx) => {
   const payId = toUUID(`pay:open:${idx}`)
   const suppId = supplierMap.get(p.supplierName) || null
+
   payableStmts.push(`INSERT INTO payables (id, company_id, description, supplier_id, amount, due_date, status, notes) VALUES ('${payId}', '${CID}', ${sqlEsc(p.description)}, ${suppId ? sqlEsc(suppId) : 'NULL'}, ${p.amount}, ${sqlEsc(p.dueDate)}, 'open', ${sqlEsc(p.notes)});`)
 })
 
 // 5. Comissões & Vendas
-const comissRaw = sheetData['Comissoes'] || []
+const comissRaw = sheetData.Comissoes || []
 const comissRows = comissRaw.slice(3).filter(r => r && r[0] && r[5] !== undefined && typeof r[5] === 'number')
 
 comissRows.forEach((c, idx) => {
@@ -109,8 +127,8 @@ comissRows.forEach((c, idx) => {
   const saleId = toUUID(`sale:${idx}`)
   const commId = toUUID(`comm:${idx}`)
 
-  saleStmts.push(`INSERT INTO sales (id, company_id, buyer_name, sale_value, sale_date, status) VALUES ('${saleId}', '${CID}', ${sqlEsc(buyerName)}, ${Number(c[3] || 0)}, '2026-05-01', ${isReceived ? "'settled'" : "'active'"});`)
-  commissionStmts.push(`INSERT INTO commissions (id, company_id, sale_id, total_amount, status) VALUES ('${commId}', '${CID}', '${saleId}', ${re9Comm}, ${isReceived ? "'received'" : "'pending'"});`)
+  saleStmts.push(`INSERT INTO sales (id, company_id, buyer_name, sale_value, sale_date, status) VALUES ('${saleId}', '${CID}', ${sqlEsc(buyerName)}, ${Number(c[3] || 0)}, '2026-05-01', ${isReceived ? '\'settled\'' : '\'active\''});`)
+  commissionStmts.push(`INSERT INTO commissions (id, company_id, sale_id, total_amount, status) VALUES ('${commId}', '${CID}', '${saleId}', ${re9Comm}, ${isReceived ? '\'received\'' : '\'pending\''});`)
 })
 
 const orderedStatements = [
@@ -121,7 +139,7 @@ const orderedStatements = [
   ...settlementStmts,
   ...transactionStmts,
   ...saleStmts,
-  ...commissionStmts
+  ...commissionStmts,
 ]
 
 fs.writeFileSync('docs/migracao/statements.json', JSON.stringify(orderedStatements, null, 2))
@@ -129,12 +147,12 @@ fs.writeFileSync('docs/migracao/statements.json', JSON.stringify(orderedStatemen
 // Chunk into 3 ordered files
 const chunks = []
 const chunkSize = 160
-for (let i = 0; i < orderedStatements.length; i += chunkSize) {
+for (let i = 0; i < orderedStatements.length; i += chunkSize)
   chunks.push(orderedStatements.slice(i, i + chunkSize))
-}
 
 chunks.forEach((chunk, idx) => {
   const sql = ['BEGIN;', 'ALTER TABLE payables DISABLE TRIGGER USER;', 'ALTER TABLE receivables DISABLE TRIGGER USER;', ...chunk, 'ALTER TABLE payables ENABLE TRIGGER USER;', 'ALTER TABLE receivables ENABLE TRIGGER USER;', 'COMMIT;'].join('\n')
+
   fs.writeFileSync(`docs/migracao/ordered_chunk_${idx}.sql`, sql)
 })
 

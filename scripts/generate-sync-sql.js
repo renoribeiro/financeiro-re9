@@ -1,4 +1,4 @@
-import fs from 'fs'
+import fs from 'node:fs'
 
 const normalized = JSON.parse(fs.readFileSync('docs/migracao/parsed_normalized.json', 'utf8'))
 const sheetData = JSON.parse(fs.readFileSync('docs/migracao/parsed_sheets.json', 'utf8'))
@@ -6,16 +6,21 @@ const sheetData = JSON.parse(fs.readFileSync('docs/migracao/parsed_sheets.json',
 const CID = 'e11042be-3d22-4048-9380-ac71e8dc9252' // RE9 Imóveis Ltda
 
 function sqlEsc(val) {
-  if (val === null || val === undefined) return 'NULL'
-  if (typeof val === 'number') return String(val)
-  if (typeof val === 'boolean') return val ? 'TRUE' : 'FALSE'
-  return `'${String(val).replace(/'/g, "''")}'`
+  if (val === null || val === undefined)
+    return 'NULL'
+  if (typeof val === 'number')
+    return String(val)
+  if (typeof val === 'boolean')
+    return val ? 'TRUE' : 'FALSE'
+
+  return `'${String(val).replace(/'/g, '\'\'')}'`
 }
 
 function genUUID() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
     const r = Math.random() * 16 | 0
     const v = c === 'x' ? r : (r & 0x3 | 0x8)
+
     return v.toString(16)
   })
 }
@@ -38,8 +43,9 @@ const categories = [
 
 // Generate SQL
 const sqlLines = []
+
 sqlLines.push(`-- SYNC DATASET FROM GOOGLE SHEETS PLANILHA V2 (${new Date().toISOString()})`)
-sqlLines.push(`BEGIN;`)
+sqlLines.push('BEGIN;')
 
 // Clear old transactions, settlements, payables, receivables for RE9 Imóveis
 sqlLines.push(`DELETE FROM settlements WHERE company_id = '${CID}';`)
@@ -99,6 +105,7 @@ normalized.saidas.forEach(s => {
 // 3. Process Pending Contas a Receber (open receivables)
 normalized.receivables.filter(r => r.status === 'open').forEach(r => {
   const recId = genUUID()
+
   sqlLines.push(`
     INSERT INTO receivables (id, company_id, description, client_name, amount, due_date, status, notes)
     VALUES ('${recId}', '${CID}', ${sqlEsc(r.description)}, ${sqlEsc(r.clientName)}, ${r.amount}, ${sqlEsc(r.dueDate)}, 'open', ${sqlEsc(r.notes)});
@@ -108,14 +115,16 @@ normalized.receivables.filter(r => r.status === 'open').forEach(r => {
 // 4. Process Pending Contas a Pagar (open payables)
 normalized.payables.filter(p => p.status === 'open').forEach(p => {
   const payId = genUUID()
+
   sqlLines.push(`
     INSERT INTO payables (id, company_id, description, supplier_name, amount, due_date, status, notes)
     VALUES ('${payId}', '${CID}', ${sqlEsc(p.description)}, ${sqlEsc(p.supplierName)}, ${p.amount}, ${sqlEsc(p.dueDate)}, 'open', ${sqlEsc(p.notes)});
   `)
 })
 
-sqlLines.push(`COMMIT;`)
+sqlLines.push('COMMIT;')
 
 const fullSql = sqlLines.join('\n')
+
 fs.writeFileSync('docs/migracao/sync_data.sql', fullSql)
 console.log(`Generated SQL file docs/migracao/sync_data.sql (${sqlLines.length} statements).`)
