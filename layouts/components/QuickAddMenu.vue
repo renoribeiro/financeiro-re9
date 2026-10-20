@@ -24,6 +24,17 @@ const errorMsg = ref<string | null>(null)
 
 const form = ref<Record<string, any>>({})
 
+// Pergunta "Descartar alterações?" ao fechar o formulário com algo digitado
+const guard = useDiscardGuard(() => form.value)
+
+function closeForm() {
+  if (loading.value)
+    return
+  guard.requestClose(() => {
+    dialog.value = false
+  })
+}
+
 const titles: Record<QuickType, string> = {
   payable: 'Nova conta a pagar',
   receivable: 'Nova conta a receber',
@@ -38,6 +49,7 @@ function open(t: QuickType) {
   form.value = t === 'payable' || t === 'receivable'
     ? { dueDate: todayISO(), amount: undefined }
     : {}
+  guard.arm()
   dialog.value = true
 }
 
@@ -56,11 +68,18 @@ const employmentTypes = [
 ]
 
 async function save() {
-  const { valid } = await formRef.value.validate()
-  if (!valid)
+  // Bloqueia o duplo clique (inclusive durante a validação do formulário)
+  if (loading.value)
     return
   loading.value = true
   errorMsg.value = null
+
+  const { valid } = await formRef.value.validate()
+  if (!valid) {
+    loading.value = false
+
+    return
+  }
   try {
     const i = form.value
     if (type.value === 'payable') {
@@ -162,6 +181,7 @@ async function save() {
           <VCardTitle>{{ titles[type] }}</VCardTitle>
         </VCardItem>
         <VCardText>
+          <DialogCompanyContext class="mb-4" />
           <VForm
             ref="formRef"
             @submit.prevent="save"
@@ -171,6 +191,7 @@ async function save() {
               type="error"
               variant="tonal"
               density="compact"
+              role="alert"
               class="mb-4"
               :text="errorMsg"
             />
@@ -295,6 +316,16 @@ async function save() {
                     :items="revenueAccounts"
                     clearable
                   />
+                </VCol>
+                <VCol cols="12">
+                  <!-- Só informa a regra que o lançamento rápido já usa; não a altera -->
+                  <VAlert
+                    type="info"
+                    variant="tonal"
+                    density="compact"
+                  >
+                    Regra de NFS-e: {{ invoiceRuleLabels.on_receive.toLowerCase() }} (padrão do lançamento rápido). A NFS-e será criada quando o recebimento for registrado. Para outra regra, use Contas a Receber.
+                  </VAlert>
                 </VCol>
               </template>
 
@@ -451,12 +482,14 @@ async function save() {
           <VBtn
             variant="tonal"
             color="secondary"
-            @click="dialog = false"
+            :disabled="loading"
+            @click="closeForm"
           >
             Cancelar
           </VBtn>
           <VBtn
             :loading="loading"
+            :disabled="loading"
             @click="save"
           >
             Salvar
@@ -464,6 +497,12 @@ async function save() {
         </VCardText>
       </VCard>
     </VDialog>
+
+    <ConfirmDialog
+      v-model="guard.prompt.value"
+      v-bind="guard.dialogProps"
+      :action="guard.discard"
+    />
 
     <VSnackbar
       v-model="snackbar"

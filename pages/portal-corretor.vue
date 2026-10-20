@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useFinanceStore } from '@/stores/finance'
 import { useAppStore } from '@/stores/app'
+import type { Commission, CommissionSplit, Payable } from '@/types/finance'
 
 const finance = useFinanceStore()
 const app = useAppStore()
@@ -58,8 +59,11 @@ const mySales = computed(() =>
   finance.companySales.filter(s => s.brokerId === brokerId.value),
 )
 
+// vendas distratadas não entram nos indicadores (C-11)
+const myActiveSales = computed(() => mySales.value.filter(s => s.status !== 'cancelled'))
+
 const mySalesMonth = computed(() =>
-  mySales.value.filter(s => inCurrentMonth(s.saleDate) && s.status !== 'cancelled'),
+  myActiveSales.value.filter(s => inCurrentMonth(s.saleDate)),
 )
 
 const myVgv = computed(() => mySalesMonth.value.reduce((sum, s) => sum + s.saleValue, 0))
@@ -74,10 +78,16 @@ const myCommissions = computed(() =>
 )
 
 // 👉 Comissão acumulada / pendente — splits do tipo broker do corretor
+const splitsOfBroker = (commissionId: string) =>
+  finance.splitsOf(commissionId).filter(s => s.beneficiaryType === 'broker' && s.beneficiaryId === brokerId.value)
+
+const isCancelledSale = (com: Commission) => finance.saleById(com.saleId)?.status === 'cancelled'
+
+// KPIs: só splits de vendas não distratadas (C-11)
 const mySplits = computed(() =>
-  myCommissions.value.flatMap(c =>
-    finance.splitsOf(c.id).filter(s => s.beneficiaryType === 'broker' && s.beneficiaryId === brokerId.value),
-  ),
+  myCommissions.value
+    .filter(c => !isCancelledSale(c))
+    .flatMap(c => splitsOfBroker(c.id)),
 )
 
 const accumulatedCommission = computed(() =>
@@ -88,10 +98,90 @@ const pendingCommission = computed(() =>
   mySplits.value.filter(s => s.status === 'pending').reduce((sum, s) => sum + s.amount, 0),
 )
 
+// 👉 Repasse do corretor (C-09 / C-10): o status vem da conta a pagar vinculada
+// ao split dele — nunca do total da comissão da imobiliária.
+type PayoutState = 'paid' | 'partial' | 'pending' | 'overdue' | 'cancelled' | 'awaiting' | 'not_applicable'
+
+const payoutMeta: Record<PayoutState, { label: string; color: string }> = {
+  paid: { label: 'Repasse pago', color: 'success' },
+  partial: { label: 'Repasse parcial', color: 'info' },
+  pending: { label: 'Repasse pendente', color: 'warning' },
+  overdue: { label: 'Repasse em atraso', color: 'error' },
+  cancelled: { label: 'Repasse cancelado', color: 'secondary' },
+  awaiting: { label: 'Aguardando lançamento', color: 'secondary' },
+  not_applicable: { label: 'Não se aplica', color: 'secondary' },
+}
+
+const payableById = computed(() => {
+  const map = new Map<string, Payable>()
+  for (const p of finance.companyPayables)
+    map.set(p.id, p)
+
+  return map
+})
+
+function payoutOf(split: CommissionSplit): { state: PayoutState; text: string } {
+  const payable = split.payableId ? payableById.value.get(split.payableId) : undefined
+
+  if (payable) {
+    if (payable.status === 'paid')
+      return { state: 'paid', text: payable.paidAt ? `Pago em ${formatDate(payable.paidAt)}` : 'Pago' }
+    if (payable.status === 'partial')
+      return { state: 'partial', text: `Parcial — ${formatBRL(payable.paidAmount ?? 0)} de ${formatBRL(payable.amount)} pagos` }
+    if (payable.status === 'cancelled')
+      return { state: 'cancelled', text: 'Repasse cancelado' }
+
+    return {
+      state: payable.status === 'overdue' ? 'overdue' : 'pending',
+      text: `Pendente — previsto para ${formatDate(payable.dueDate)}`,
+    }
+  }
+
+  // conta vinculada não carregada (ou ainda não lançada): usa o status do split
+  if (split.status === 'paid')
+    return { state: 'paid', text: 'Pago' }
+  if (split.status === 'not_applicable')
+    return { state: 'not_applicable', text: 'Não se aplica' }
+  if (split.payableId)
+    return { state: 'pending', text: 'Pendente' }
+
+  return { state: 'awaiting', text: 'Aguardando lançamento do repasse' }
+}
+
+function headerStateOf(states: PayoutState[]): PayoutState {
+  if (!states.length)
+    return 'awaiting'
+  if (states.length === 1 || states.every(st => st === states[0]))
+    return states[0]
+  if (states.some(st => st === 'paid' || st === 'partial'))
+    return 'partial'
+
+  return states[0]
+}
+
+const commissionRows = computed(() =>
+  myCommissions.value.map(com => {
+    const splits = splitsOfBroker(com.id).map(split => ({ split, payout: payoutOf(split) }))
+    const installments = finance.installmentsOf(com.id).filter(i => i.status !== 'cancelled')
+    const received = installments.filter(i => i.status === 'received').length
+
+    return {
+      com,
+      sale: finance.saleById(com.saleId),
+      splits,
+      myAmount: splits.length ? splits.reduce((sum, s) => sum + s.split.amount, 0) : null,
+      headerState: headerStateOf(splits.map(s => s.payout.state)),
+      installmentsTotal: installments.length,
+      installmentsReceived: received,
+      nextExpectedDate: installments.find(i => i.status !== 'received')?.expectedDate,
+    }
+  }),
+)
+
 const kpis = computed(() => [
-  { title: 'Minhas vendas (mês)', value: String(mySalesMonth.value.length), icon: 'ri-home-4-line', color: 'primary', subtitle: `${mySales.value.length} no total` },
+  { title: 'Minhas vendas (mês)', value: String(mySalesMonth.value.length), icon: 'ri-home-4-line', color: 'primary', subtitle: `${myActiveSales.value.length} no total` },
   { title: 'VGV do mês', value: formatBRLCompact(myVgv.value), icon: 'ri-funds-line', color: 'info', subtitle: 'Valor geral de vendas' },
-  { title: 'Comissão acumulada', value: formatBRL(accumulatedCommission.value), icon: 'ri-hand-coin-line', color: 'success', subtitle: 'Splits do corretor' },
+  { title: 'Comissão acumulada', value: formatBRL(accumulatedCommission.value), icon: 'ri-hand-coin-line', color: 'success', subtitle: 'Sua parte (sem distratos)' },
   { title: 'Comissão pendente', value: formatBRL(pendingCommission.value), icon: 'ri-time-line', color: 'warning', subtitle: 'A receber' },
 ])
 
@@ -257,25 +347,42 @@ const myFunnelByStage = computed(() =>
                   variant="accordion"
                 >
                   <VExpansionPanel
-                    v-for="com in myCommissions"
-                    :key="com.id"
+                    v-for="row in commissionRows"
+                    :key="row.com.id"
                   >
                     <VExpansionPanelTitle>
-                      <div class="d-flex align-center justify-space-between flex-grow-1 me-3">
+                      <div class="d-flex align-center justify-space-between flex-wrap gap-2 flex-grow-1 me-3">
                         <div>
                           <div class="font-weight-medium">
-                            {{ finance.saleById(com.saleId)?.buyerName ?? '—' }}
+                            {{ row.sale?.buyerName ?? '—' }}
+                            <VChip
+                              v-if="row.sale?.status === 'cancelled'"
+                              size="x-small"
+                              label
+                              color="error"
+                              class="ms-2"
+                            >
+                              Distratada
+                            </VChip>
                           </div>
                           <div class="text-caption text-disabled">
-                            {{ finance.developmentName(finance.saleById(com.saleId)?.developmentId) }}
+                            {{ finance.developmentName(row.sale?.developmentId) }}
                           </div>
                         </div>
                         <div class="d-flex align-center gap-x-3">
-                          <span class="font-weight-medium">{{ formatBRL(com.totalAmount) }}</span>
-                          <StatusChip
-                            :value="com.status"
-                            :map="commissionStatusMeta"
-                          />
+                          <div class="text-end">
+                            <div class="text-caption text-disabled">
+                              Sua parte
+                            </div>
+                            <span class="font-weight-medium">{{ row.myAmount === null ? '—' : formatBRL(row.myAmount) }}</span>
+                          </div>
+                          <VChip
+                            size="small"
+                            label
+                            :color="payoutMeta[row.headerState].color"
+                          >
+                            {{ payoutMeta[row.headerState].label }}
+                          </VChip>
                         </div>
                       </div>
                     </VExpansionPanelTitle>
@@ -285,29 +392,47 @@ const myFunnelByStage = computed(() =>
                         density="compact"
                         truncate-line="both"
                       >
+                        <!-- Etapa 1: construtora → imobiliária -->
                         <VTimelineItem
-                          v-for="inst in finance.installmentsOf(com.id)"
-                          :key="inst.id"
-                          :dot-color="installmentStatusMeta[inst.status].color"
+                          :dot-color="row.installmentsTotal && row.installmentsReceived === row.installmentsTotal ? 'success' : 'warning'"
                           size="x-small"
                         >
-                          <div class="d-flex justify-space-between flex-wrap gap-2">
-                            <div>
-                              <span class="font-weight-medium">
-                                Parcela {{ inst.installmentNumber }} · {{ formatBRL(inst.amount) }}
-                              </span>
-                              <div class="text-caption text-disabled">
-                                Prevista: {{ formatDate(inst.expectedDate) }}
-                                <template v-if="inst.receivedDate">
-                                  · Recebida: {{ formatDate(inst.receivedDate) }}
-                                </template>
+                          <div class="font-weight-medium">
+                            Imobiliária recebeu da construtora: {{ row.installmentsReceived }} de {{ row.installmentsTotal }} {{ row.installmentsTotal === 1 ? 'parcela' : 'parcelas' }}
+                          </div>
+                          <div
+                            v-if="row.nextExpectedDate"
+                            class="text-caption text-disabled"
+                          >
+                            Próxima prevista para {{ formatDate(row.nextExpectedDate) }}
+                          </div>
+                        </VTimelineItem>
+
+                        <!-- Etapa 2: imobiliária → corretor -->
+                        <VTimelineItem
+                          :dot-color="payoutMeta[row.headerState].color"
+                          size="x-small"
+                        >
+                          <template v-if="row.splits.length">
+                            <div
+                              v-for="s in row.splits"
+                              :key="s.split.id"
+                            >
+                              <span class="font-weight-medium">Seu repasse: {{ s.payout.text }}</span>
+                              <div
+                                v-if="row.splits.length > 1"
+                                class="text-caption text-disabled"
+                              >
+                                {{ formatBRL(s.split.amount) }}
                               </div>
                             </div>
-                            <StatusChip
-                              :value="inst.status"
-                              :map="installmentStatusMeta"
-                            />
-                          </div>
+                          </template>
+                          <span
+                            v-else
+                            class="font-weight-medium"
+                          >
+                            Seu repasse: Aguardando lançamento do repasse
+                          </span>
                         </VTimelineItem>
                       </VTimeline>
                     </VExpansionPanelText>

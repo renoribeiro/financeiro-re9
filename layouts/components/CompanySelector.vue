@@ -1,10 +1,29 @@
 <script setup lang="ts">
 import { useDisplay } from 'vuetify'
 import { useAppStore } from '@/stores/app'
+import { resolveRouteRedirect } from '@/utils/routeAccess'
 
 const appStore = useAppStore()
+const route = useRoute()
 const { xs } = useDisplay()
 const companyIcon = computed(() => appStore.isRealEstate ? 'ri-building-line' : 'ri-megaphone-line')
+
+const switched = ref(false)
+
+async function selectCompany(id: string) {
+  if (id === appStore.currentCompanyId)
+    return
+  appStore.setCompany(id)
+  if (appStore.currentCompanyId !== id)
+    return
+  switched.value = true
+
+  // A página aberta pode não existir para a nova empresa/perfil (ex.: Vendas
+  // numa agência): reavalia as regras de acesso e redireciona se preciso.
+  const target = resolveRouteRedirect(route.path, appStore)
+  if (target && target !== route.path)
+    await navigateTo(target)
+}
 </script>
 
 <template>
@@ -12,16 +31,11 @@ const companyIcon = computed(() => appStore.isRealEstate ? 'ri-building-line' : 
     variant="tonal"
     color="default"
     class="company-selector text-none"
-    :icon="xs"
     :prepend-icon="xs ? undefined : companyIcon"
     :append-icon="xs ? undefined : 'ri-arrow-down-s-line'"
-    :aria-label="xs ? `Selecionar empresa. Atual: ${appStore.currentCompany.tradeName}` : undefined"
+    :aria-label="`Empresa atual: ${appStore.currentCompany.tradeName}. Trocar de empresa`"
   >
-    <VIcon
-      v-if="xs"
-      :icon="companyIcon"
-    />
-    <span v-else>{{ appStore.currentCompany.tradeName }}</span>
+    <span class="company-selector__name text-truncate">{{ appStore.currentCompany.tradeName }}</span>
 
     <VMenu
       activator="parent"
@@ -37,7 +51,7 @@ const companyIcon = computed(() => appStore.isRealEstate ? 'ri-building-line' : 
           v-for="company in appStore.availableCompanies"
           :key="company.id"
           :active="company.id === appStore.currentCompanyId"
-          @click="appStore.setCompany(company.id)"
+          @click="selectCompany(company.id)"
         >
           <template #prepend>
             <VAvatar
@@ -64,6 +78,15 @@ const companyIcon = computed(() => appStore.isRealEstate ? 'ri-building-line' : 
       </VList>
     </VMenu>
   </VBtn>
+
+  <VSnackbar
+    v-model="switched"
+    :timeout="4000"
+    location="bottom"
+    color="primary"
+  >
+    Agora você está em <strong>{{ appStore.currentCompany.tradeName }}</strong>.
+  </VSnackbar>
 </template>
 
 <style lang="scss" scoped>
@@ -76,10 +99,16 @@ const companyIcon = computed(() => appStore.isRealEstate ? 'ri-building-line' : 
 }
 
 @media (max-width: 599.98px) {
+  // No celular o nome continua visível (curto), em vez de só um ícone:
+  // é onde o risco de operar na empresa errada é maior.
   .company-selector {
     block-size: 2.75rem !important;
-    inline-size: 2.75rem !important;
-    max-inline-size: 2.75rem;
+    max-inline-size: 7.5rem;
+    padding-inline: 0.625rem !important;
+  }
+
+  .company-selector__name {
+    font-size: 0.8125rem;
   }
 }
 </style>

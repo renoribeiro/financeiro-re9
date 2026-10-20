@@ -20,6 +20,12 @@ const app = useAppStore()
   <VerticalNavLayout>
     <!-- 👉 navbar -->
     <template #navbar="{ toggleVerticalOverlayNavActive }">
+      <!-- 👉 Faixa com a cor da empresa ativa (contexto multiempresa sempre visível) -->
+      <div
+        class="company-context-stripe"
+        :class="`bg-${app.currentCompany.logoColor}`"
+        aria-hidden="true"
+      />
       <div class="mobile-navbar d-flex h-100 align-center">
         <!-- 👉 Vertical nav toggle in overlay mode -->
         <IconBtn
@@ -33,8 +39,11 @@ const app = useAppStore()
         <!-- 👉 Seletor de empresa (multi-tenant) -->
         <CompanySelector />
 
-        <!-- 👉 Saldo em caixa — sempre visível -->
-        <CashBalanceBadge class="ms-4 d-none d-sm-flex" />
+        <!-- 👉 Saldo em caixa — visível para a gestão (não para o corretor) -->
+        <CashBalanceBadge
+          v-if="!app.isBroker"
+          class="ms-4 d-none d-sm-flex"
+        />
 
         <!-- 👉 Botão global de adicionar (atalhos rápidos) -->
         <QuickAddMenu
@@ -93,6 +102,15 @@ const app = useAppStore()
 </template>
 
 <style lang="scss" scoped>
+.company-context-stripe {
+  position: absolute;
+  z-index: 1;
+  block-size: 3px;
+  inset-block-start: 0;
+  inset-inline: 0;
+  pointer-events: none;
+}
+
 .meta-key {
   border: thin solid rgba(var(--v-border-color), var(--v-border-opacity));
   border-radius: 6px;

@@ -119,10 +119,39 @@ function newExternalInvoice(): ExternalInvoiceInput {
   }
 }
 
+// Erros mostrados dentro dos diálogos abertos (além do aviso na tela)
+const formError = ref('')
+const recvError = ref('')
+const reverseError = ref('')
+
 function showMessage(text: string, color: 'success' | 'error' = 'success') {
   snackbarText.value = text
   snackbarColor.value = color
   snackbar.value = true
+}
+
+function showFormError(text: string) {
+  formError.value = text
+  showMessage(text, 'error')
+}
+
+// Pergunta "Descartar alterações?" ao fechar o formulário com algo digitado
+const guard = useDiscardGuard(() => ({
+  editing: editing.value,
+  adjustmentReason: adjustmentReason.value,
+  receiptSituation: receiptSituation.value,
+  reopenReason: reopenReason.value,
+  initialSituation: initialSituation.value,
+  initialReceipt: initialReceipt.value,
+  externalInvoice: externalInvoice.value,
+}))
+
+function closeForm() {
+  if (saving.value)
+    return
+  guard.requestClose(() => {
+    dialog.value = false
+  })
 }
 
 function openNew() {
@@ -135,6 +164,8 @@ function openNew() {
   initialSituation.value = 'pending'
   initialReceipt.value = newReceipt()
   externalInvoice.value = newExternalInvoice()
+  formError.value = ''
+  guard.arm()
   dialog.value = true
 }
 function openEdit(r: Receivable) {
@@ -159,34 +190,47 @@ function openEdit(r: Receivable) {
     documentUrl: invoice?.pdfUrl,
     environment: invoice?.environment ?? 'producao',
   }
+  formError.value = ''
+  guard.arm()
   dialog.value = true
 }
 async function save() {
+  // Bloqueia o duplo clique (inclusive durante a validação do formulário)
+  if (saving.value)
+    return
+
   const wasEditing = Boolean(editing.value.id)
 
   const shouldReopen = wasEditing
     && originalReceivedAmount.value > 0
     && receiptSituation.value === 'unreceived'
 
+  formError.value = ''
   if (shouldReopen && !reopenReason.value.trim()) {
-    showMessage('Informe o motivo para marcar a conta como não recebida.', 'error')
-
-    return
-  }
-  const { valid } = await formRef.value.validate()
-  if (!valid)
-    return
-  if (editing.value.invoiceRule === 'manual' && !externalInvoice.value.number.trim()) {
-    showMessage('Informe o número da NFS-e já emitida.', 'error')
-
-    return
-  }
-  if (amountWasAdjusted.value && !adjustmentReason.value.trim()) {
-    showMessage('Informe o motivo do ajuste manual da comissão.', 'error')
+    showFormError('Informe o motivo para marcar a conta como não recebida.')
 
     return
   }
   saving.value = true
+
+  const { valid } = await formRef.value.validate()
+  if (!valid) {
+    saving.value = false
+
+    return
+  }
+  if (editing.value.invoiceRule === 'manual' && !externalInvoice.value.number.trim()) {
+    saving.value = false
+    showFormError('Informe o número da NFS-e já emitida.')
+
+    return
+  }
+  if (amountWasAdjusted.value && !adjustmentReason.value.trim()) {
+    saving.value = false
+    showFormError('Informe o motivo do ajuste manual da comissão.')
+
+    return
+  }
   let accountWasSaved = false
   try {
     if (initialSituation.value === 'received') {
@@ -224,7 +268,7 @@ async function save() {
       ? `Os dados da conta foram salvos, mas não foi possível estornar o recebimento: ${detail}`
       : detail
 
-    showMessage(message, 'error')
+    showFormError(message)
   }
   finally {
     saving.value = false
@@ -250,13 +294,15 @@ function openReceive(r: Receivable) {
   recvNotes.value = ''
   recvRequestId.value = crypto.randomUUID()
   recvProof.value = ''
+  recvError.value = ''
   recvDialog.value = true
 }
 const recvRemaining = computed(() => recvTarget.value ? receivableOutstanding(recvTarget.value) : 0)
 async function doReceive() {
-  if (!recvTarget.value)
+  if (!recvTarget.value || actionLoading.value)
     return
   actionLoading.value = true
+  recvError.value = ''
   try {
     await finance.receiveReceivable(recvTarget.value.id, {
       amount: recvAmount.value,
@@ -271,13 +317,17 @@ async function doReceive() {
     showMessage('Recebimento registrado. O saldo realizado foi atualizado.')
   }
   catch (error) {
-    showMessage(error instanceof Error ? error.message : 'Não foi possível registrar o recebimento.', 'error')
+    recvError.value = error instanceof Error ? error.message : 'Não foi possível registrar o recebimento.'
+    showMessage(recvError.value, 'error')
   }
   finally {
     actionLoading.value = false
   }
 }
 
+// As ações de cancelar/excluir são executadas pelo ConfirmDialog (:action): em
+// caso de falha elas lançam o erro, que aparece dentro do diálogo; ele só fecha
+// no sucesso.
 const cancelDialog = ref(false)
 const cancelTarget = ref<Receivable | null>(null)
 function askCancel(r: Receivable) {
@@ -286,42 +336,49 @@ function askCancel(r: Receivable) {
 }
 async function doCancel() {
   if (!cancelTarget.value)
-    return
-  actionLoading.value = true
-  try {
-    await finance.cancelReceivable(cancelTarget.value.id)
-    showMessage('Conta cancelada com sucesso.')
-  }
-  catch (error) {
-    showMessage(error instanceof Error ? error.message : 'Não foi possível cancelar a conta.', 'error')
-  }
-  finally {
-    actionLoading.value = false
-    cancelTarget.value = null
-  }
+    throw new Error('Nenhuma conta selecionada para cancelar.')
+  await finance.cancelReceivable(cancelTarget.value.id)
+  showMessage('Conta cancelada com sucesso.')
+}
+
+// Espelha a trava do servidor (trigger private.guard_financial_account_delete,
+// versão mais recente em supabase/migrations/20260809204545_commercial_crud_and_point_in_time_history.sql).
+// Só bloqueia quando a tela tem certeza de que o servidor recusaria; o que a
+// tela não enxerga continua barrado pelo servidor, com o erro dentro do diálogo.
+const receivableIdsWithHistory = computed(() => new Set([
+  ...finance.settlements.map(s => s.receivableId),
+  ...finance.transactions.map(t => t.receivableId),
+].filter(Boolean)))
+
+const receivableIdsWithInvoice = computed(() => new Set(finance.invoices.map(i => i.receivableId).filter(Boolean)))
+const receivableIdsWithCommission = computed(() => new Set(finance.commissionInstallments.map(ci => ci.receivableId).filter(Boolean)))
+
+function deleteBlockReason(r: Receivable): string {
+  if ((r.receivedAmount ?? 0) > 0 || r.status === 'partial' || r.status === 'received')
+    return 'Conta com recebimento registrado não pode ser excluída. Para desfazer o recebimento, use “Estornar”.'
+  if (receivableIdsWithHistory.value.has(r.id))
+    return 'Conta com histórico de recebimento (mesmo estornado) não pode ser excluída. Use “Cancelar conta”.'
+  if (receivableIdsWithInvoice.value.has(r.id))
+    return 'Conta com NFS-e vinculada não pode ser excluída.'
+  if (r.saleId || r.commissionInstallmentId || receivableIdsWithCommission.value.has(r.id))
+    return 'Conta vinculada a venda ou comissão não pode ser excluída.'
+
+  return ''
 }
 
 const deleteDialog = ref(false)
 const deleteTarget = ref<Receivable | null>(null)
 function askDelete(r: Receivable) {
+  if (deleteBlockReason(r))
+    return
   deleteTarget.value = r
   deleteDialog.value = true
 }
 async function doDelete() {
   if (!deleteTarget.value)
-    return
-  actionLoading.value = true
-  try {
-    await finance.deleteReceivable(deleteTarget.value.id)
-    showMessage('Conta excluída permanentemente.')
-  }
-  catch (error) {
-    showMessage(error instanceof Error ? error.message : 'Não foi possível excluir a conta.', 'error')
-  }
-  finally {
-    actionLoading.value = false
-    deleteTarget.value = null
-  }
+    throw new Error('Nenhuma conta selecionada para excluir.')
+  await finance.deleteReceivable(deleteTarget.value.id)
+  showMessage('Conta excluída permanentemente.')
 }
 
 function invoiceOf(receivableId: string) {
@@ -341,6 +398,7 @@ const reverseReason = ref('')
 function openReverse(r: Receivable) {
   reverseTarget.value = activeReceipts(r.id)[0] ?? null
   reverseReason.value = ''
+  reverseError.value = ''
   if (!reverseTarget.value) {
     showMessage('Nenhum recebimento ativo foi encontrado para estorno.', 'error')
 
@@ -349,16 +407,18 @@ function openReverse(r: Receivable) {
   reverseDialog.value = true
 }
 async function doReverse() {
-  if (!reverseTarget.value || !reverseReason.value.trim())
+  if (!reverseTarget.value || !reverseReason.value.trim() || actionLoading.value)
     return
   actionLoading.value = true
+  reverseError.value = ''
   try {
     await finance.reverseReceivableSettlement(reverseTarget.value.id, reverseReason.value.trim())
     reverseDialog.value = false
     showMessage('Recebimento estornado e saldo recalculado.')
   }
   catch (error) {
-    showMessage(error instanceof Error ? error.message : 'Não foi possível estornar o recebimento.', 'error')
+    reverseError.value = error instanceof Error ? error.message : 'Não foi possível estornar o recebimento.'
+    showMessage(reverseError.value, 'error')
   }
   finally {
     actionLoading.value = false
@@ -600,17 +660,26 @@ async function doReverse() {
                 Cancelar conta
               </VTooltip>
             </IconBtn>
-            <IconBtn
+            <!-- O tooltip fica no <span> porque botão desabilitado não recebe o mouse -->
+            <span
               v-if="app.canManageFinance"
-              color="error"
-              aria-label="Excluir conta permanentemente"
-              @click="askDelete(item)"
+              class="d-inline-flex"
             >
-              <VIcon icon="ri-delete-bin-line" />
-              <VTooltip activator="parent">
-                Excluir permanentemente
+              <IconBtn
+                color="error"
+                :disabled="Boolean(deleteBlockReason(item))"
+                :aria-label="deleteBlockReason(item) || 'Excluir conta permanentemente'"
+                @click="askDelete(item)"
+              >
+                <VIcon icon="ri-delete-bin-line" />
+              </IconBtn>
+              <VTooltip
+                activator="parent"
+                max-width="300"
+              >
+                {{ deleteBlockReason(item) || 'Excluir permanentemente' }}
               </VTooltip>
-            </IconBtn>
+            </span>
           </div>
         </template>
         <template #no-data>
@@ -632,6 +701,17 @@ async function doReverse() {
           <VCardTitle>{{ editing.id ? 'Editar conta a receber' : 'Nova conta a receber' }}</VCardTitle>
         </VCardItem>
         <VCardText class="account-dialog__body">
+          <DialogCompanyContext class="mb-4" />
+          <VAlert
+            v-if="formError"
+            type="error"
+            variant="tonal"
+            density="compact"
+            role="alert"
+            class="mb-4"
+          >
+            {{ formError }}
+          </VAlert>
           <VForm
             ref="formRef"
             @submit.prevent="save"
@@ -968,7 +1048,8 @@ async function doReverse() {
           <VBtn
             variant="tonal"
             color="secondary"
-            @click="dialog = false"
+            :disabled="saving"
+            @click="closeForm"
           >
             Cancelar
           </VBtn>
@@ -993,6 +1074,17 @@ async function doReverse() {
           <VCardTitle>Registrar recebimento</VCardTitle>
         </VCardItem>
         <VCardText>
+          <DialogCompanyContext class="mb-4" />
+          <VAlert
+            v-if="recvError"
+            type="error"
+            variant="tonal"
+            density="compact"
+            role="alert"
+            class="mb-4"
+          >
+            {{ recvError }}
+          </VAlert>
           <p class="mb-4">
             {{ recvTarget?.description }}
           </p>
@@ -1073,6 +1165,17 @@ async function doReverse() {
           <VCardTitle>Estornar recebimento</VCardTitle>
         </VCardItem>
         <VCardText>
+          <DialogCompanyContext class="mb-4" />
+          <VAlert
+            v-if="reverseError"
+            type="error"
+            variant="tonal"
+            density="compact"
+            role="alert"
+            class="mb-4"
+          >
+            {{ reverseError }}
+          </VAlert>
           <VAlert
             type="warning"
             variant="tonal"
@@ -1113,19 +1216,32 @@ async function doReverse() {
     <ConfirmDialog
       v-model="cancelDialog"
       title="Cancelar conta"
-      :message="`Deseja cancelar '${cancelTarget?.description}'?`"
       confirm-text="Cancelar conta"
       confirm-color="error"
-      @confirm="doCancel"
-    />
+      cancel-text="Manter conta"
+      :action="doCancel"
+    >
+      <DialogCompanyContext class="mb-4" />
+      <div>Deseja cancelar '{{ cancelTarget?.description }}'?</div>
+    </ConfirmDialog>
 
     <ConfirmDialog
       v-model="deleteDialog"
       title="Excluir conta permanentemente"
-      :message="`A conta '${deleteTarget?.description}' será removida definitivamente. Esta ação só é permitida quando não há recebimento, transação, NFS-e, venda, comissão ou outro vínculo. Deseja continuar?`"
       confirm-text="Excluir permanentemente"
       confirm-color="error"
-      @confirm="doDelete"
+      :action="doDelete"
+    >
+      <DialogCompanyContext class="mb-4" />
+      <div>
+        A conta '{{ deleteTarget?.description }}' será removida definitivamente. Esta ação só é permitida quando não há recebimento, transação, NFS-e, venda, comissão ou outro vínculo — inclusive recebimentos já estornados. Se houver, o sistema recusa a exclusão e mostra o motivo aqui. Deseja continuar?
+      </div>
+    </ConfirmDialog>
+
+    <ConfirmDialog
+      v-model="guard.prompt.value"
+      v-bind="guard.dialogProps"
+      :action="guard.discard"
     />
 
     <VSnackbar

@@ -34,6 +34,7 @@ Até as correções do Lote 2 entrarem no ar:
 1. **Não use "Parcelar esta conta"** em Contas a Pagar. Hoje cada parcela recebe o valor **total** (R$ 3.000 em 3× gera 3 × R$ 3.000). Se precisar parcelar, digite **o valor de cada parcela** no campo Valor.
 2. **Não use o Importador.** Ele pode multiplicar valores (`1234.56` vira 123.456) e gravar datas com um dia a menos.
 3. **Ao registrar um recebimento**, confira a data e a hora sugeridas. A hora vem 3 horas adiantada, e depois das 21h a data sugerida já é a do dia seguinte. Corrija à mão se for preciso.
+   **Evite dar baixa (pagar ou receber) depois das 21h.** Nesse horário, o caixa registra a data do dia seguinte.
 4. **Em Comissões, os botões "Receber" e "Pagar repasse" agem com um clique só**, sem confirmação, com a data de hoje e o valor integral. Clique só quando tiver certeza.
 5. **Em Notas Fiscais, o botão de emitir envia a nota na hora**, sem tela de revisão.
 6. **Histórico → "Restaurar"** desfaz **todas** as alterações feitas depois do ponto escolhido, inclusive as de outros usuários. Não use sem combinar antes.
@@ -68,7 +69,7 @@ Até as correções do Lote 2 entrarem no ar:
 | 0.4 | ✅ Feito | A fotografia (registros e somas de todas as colunas numéricas de todas as tabelas) está em `fotografia-2026-10-19.csv`. Principais números: 214 contas a pagar (R$ 561.335,90), 47 contas a receber (R$ 636.532,54), 242 lançamentos (R$ 1.059.227,41) e 29 vendas (R$ 14.432.436,29). As somas de lançamentos e de baixas são iguais, o que indica consistência. |
 | 0.5 | ✅ Verificado | **Hoje nenhum dado está escondido.** Todas as tabelas financeiras têm menos de 1.000 registros (a maior, de baixas e lançamentos, tem 242). A única com mais é o Histórico (3.164), que já carrega de propósito só os 1.000 mais recentes. No ritmo atual, cerca de 46 lançamentos por mês, o limite seria atingido em mais ou menos 16 meses. A correção (F-16) continua no plano, mas **não é urgente**. |
 | 0.6 | 🟡 Parcial | A cópia local isolada (contêiner `re9-copia-local`, acessível só deste computador) já tem todos os dados financeiros. Para testar as telas falta montar o login e o armazenamento, com as integrações desligadas. Isso será feito antes do Lote 1. |
-| 0.7 | ✅ Feito | **Nenhum registro antigo foi danificado pelos defeitos.** (a) Nenhuma conta foi criada pelo "Parcelar". (b) Nenhum recebimento caiu na data errada: nenhuma baixa tem horário entre 0h e 3h. Sete recebimentos de ago–set têm horários de tarde ou noite, que podem estar adiantados em 3h, mas a **data está certa**, e só a data entra nos relatórios. (c) Não há sinal de uso do Importador. O único lote de inclusões em massa (15 contas em 05/10, 15h29) coincide com a sincronização oficial "Financeiro V2". |
+| 0.7 | ✅ Feito (corrigido em 2026-10-19) | **Correção:** a primeira versão deste levantamento estava incompleta e dizia que nenhum lançamento tinha data errada. Isso não é verdade. **15 lançamentos feitos pela tela entraram no caixa com a data do dia seguinte**: 11 pagamentos (R$ 25.164,22) e 4 recebimentos (R$ 58.262,57), entre agosto e setembro. A causa é que o servidor grava a data do caixa pelo dia em UTC, então qualquer baixa feita depois das 21h cai no dia seguinte. Em 3 recebimentos houve ainda o defeito F-02 (hora sugerida 3h adiantada): baixas feitas entre 19h39 e 20h39 foram gravadas como 22h39–23h39. **Nenhum desses 15 mudou de mês**, então os relatórios mensais e a DRE estão certos. Só o fluxo diário fica deslocado em 1 dia. Os registros importados das planilhas (gravados à meia-noite UTC) estão com a data correta. Os outros pontos continuam valendo: (a) nenhuma conta foi criada pelo "Parcelar"; (b) não há sinal de uso do Importador. Corrigir os 15 lançamentos antigos é decisão sua; nada é alterado automaticamente. |
 
 ## 4. Como cada correção é classificada
 
@@ -107,12 +108,19 @@ Cada lote é um conjunto pequeno, publicado e conferido antes do próximo. Ordem
 | F-20 | A lixeira some (ou fica desabilitada com explicação) nos títulos que o servidor já recusaria excluir. | A |
 | G-09 (parte) | Perguntar "Descartar alterações?" ao fechar um formulário alterado (evita perder o que foi digitado). | A |
 
+#### Defeitos já existentes encontrados durante o Lote 1 (corrigidos no próprio lote)
+
+| ID | Defeito (já estava em produção) | Correção (só tela) |
+|---|---|---|
+| G-18 | **O sistema não reconhecia o usuário logado.** O módulo de login entrega o código do usuário no campo `sub`, mas a tela procurava `id`. Consequências: (a) o corretor via o Portal vazio, como "não vinculado"; (b) para quem vê vários usuários (administradores), as permissões exibidas vinham do **primeiro usuário da lista**, não de quem estava logado; (c) notificações dirigidas a um usuário não apareciam para ele. O banco (RLS) sempre usou o usuário certo, então nenhum dado foi exposto ou alterado por isso. | `utils/authUser.ts` lê `id` ou `sub`. **A gravação de notificações foi mantida idêntica** (sem dono, visível à empresa). Atribuir um dono mudaria quem vê cada notificação: fica como decisão de produto. |
+| S-21 | **Login travava na tela de entrada** depois de sair e entrar de novo (confirmado também na versão original). A tela ia para o Dashboard antes de a sessão chegar ao app, e a proteção de rota devolvia o usuário ao login. | A tela de login só navega quando o usuário logado já está disponível. |
+
 ### Lote 2 — Parar de gravar dados errados (principalmente tipo B, tudo testado na cópia)
 
 | ID | O que muda | Cuidado especial |
 |---|---|---|
 | F-01 | **Parcelamento:** o formulário passa a exigir que você diga se o valor digitado é **o total** ou **o de cada parcela** (não há opção pré-marcada, porque hoje o costume é o contrário). Uma prévia mostra "3 parcelas de R$ 1.000,00 = total R$ 3.000,00" antes de salvar. Divisão em centavos, com o resto na última parcela. Vencimento no dia 31 cai no último dia do mês, em vez de pular de mês. Aceita de 2 a 120 parcelas. A recorrência fica escondida quando a conta é parcelada (F-22: hoje é ignorada sem aviso). | Teste com 2, 3, 7 e 12 parcelas e com valores que não dividem exato (R$ 100 em 3×) |
-| F-02 | Data e hora sugeridas no recebimento e na emissão manual passam a ser as de Brasília, não UTC. | Teste às 20h59, 21h01 e 23h59, e no último dia do mês |
+| F-02 | Data e hora sugeridas no recebimento e na emissão manual passam a ser as de Brasília, não UTC. **Ampliado:** toda baixa feita com a data "de agora" (pagar, receber, comissão, repasse) passa a enviar ao servidor a data de Brasília ao meio-dia, para o caixa registrar o dia certo mesmo depois das 21h. A mudança é só na tela; o servidor e o banco não mudam. | Teste às 20h59, 21h01 e 23h59, e no último dia do mês, conferindo a data gravada no caixa da cópia |
 | F-13 | Baixa de pagamento com chave anti-duplicidade estável (igual à que Contas a Receber já usa). Repetir o clique depois de uma queda de rede não paga duas vezes. | Simular falha de rede na cópia e repetir o clique |
 | I-01 | Importador: números com ponto ou vírgula decimal lidos corretamente, com escolha do formato e a prévia do valor interpretado. | Teste com `1234.56`, `1.234,56`, `1,234.56`, `1234` e `R$ 1.234,56` |
 | I-02 | Importador: datas `aaaa-mm-dd`, `dd/mm/aaaa`, `dd/mm/aa` e `dd-mm-aaaa` lidas no fuso local; formatos ambíguos são rejeitados com mensagem clara. | Teste com cada formato, 29/02 e 31/12 |

@@ -23,6 +23,16 @@ const EMPTY_COMPANY: Company = {
 
 const EMPTY_USER: UserProfile = { id: '', fullName: '', email: '', avatarColor: 'primary', roles: [] }
 
+// Lembra a última empresa escolhida neste navegador (só o id; o acesso é sempre
+// revalidado contra os vínculos do usuário antes de ser usado). Lido pelo plugin
+// de hidratação e repassado a `hydrate`; gravado aqui ao trocar de empresa.
+export const COMPANY_COOKIE = 're9_company'
+
+function rememberCompany(id: string) {
+  if (import.meta.client)
+    document.cookie = `${COMPANY_COOKIE}=${encodeURIComponent(id)}; Max-Age=${60 * 60 * 24 * 365}; Path=/; SameSite=Lax`
+}
+
 export const useAppStore = defineStore('app', {
   state: () => ({
     companies: [] as Company[],
@@ -75,16 +85,27 @@ export const useAppStore = defineStore('app', {
 
   actions: {
     /** Popula o contexto a partir dos dados carregados do Supabase. */
-    hydrate(data: { companies: Company[]; users: UserProfile[]; currentUser: UserProfile }) {
+    hydrate(data: { companies: Company[]; users: UserProfile[]; currentUser: UserProfile }, rememberedCompanyId?: string | null) {
       this.companies = data.companies
       this.users = data.users.some(user => user.id === data.currentUser.id)
         ? data.users
         : [...data.users, data.currentUser]
       this.currentUserId = data.currentUser.id
 
+      // Ordem estável (por nome) para a escolha inicial ser sempre a mesma no
+      // servidor e no navegador, independentemente da ordem vinda do banco.
+      const nameOf = (id: string) => data.companies.find(c => c.id === id)?.tradeName ?? ''
+
       const accessible = data.currentUser.roles.map(r => r.companyId)
-      if (!accessible.includes(this.currentCompanyId))
-        this.currentCompanyId = accessible[0] ?? data.companies[0]?.id ?? ''
+        .sort((a, b) => nameOf(a).localeCompare(nameOf(b), 'pt-BR'))
+
+      if (!accessible.includes(this.currentCompanyId)) {
+        // Reabre na última empresa escolhida (se o usuário ainda tiver acesso),
+        // em vez de voltar sempre para a primeira após recarregar a página.
+        this.currentCompanyId = (rememberedCompanyId && accessible.includes(rememberedCompanyId))
+          ? rememberedCompanyId
+          : accessible[0] ?? data.companies[0]?.id ?? ''
+      }
     },
 
     reset() {
@@ -98,8 +119,10 @@ export const useAppStore = defineStore('app', {
 
     setCompany(id: string) {
       // só permite trocar para empresas às quais o usuário tem acesso
-      if (this.currentUser.roles.some(r => r.companyId === id))
+      if (this.currentUser.roles.some(r => r.companyId === id)) {
         this.currentCompanyId = id
+        rememberCompany(id)
+      }
     },
 
     updateCompany(id: string, patch: Partial<Company>) {

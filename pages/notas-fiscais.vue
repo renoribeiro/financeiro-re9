@@ -85,7 +85,11 @@ const actionLoadingId = ref('')
 const actionMessage = ref('')
 const actionError = ref('')
 
-async function runInvoiceAction(inv: Invoice, action: () => Promise<unknown>, successMessage: string) {
+/**
+ * Executa a operação fiscal (mesma chamada do store de antes) e lança erro se
+ * ela falhar. Usada pelos diálogos de confirmação, que mostram o erro dentro.
+ */
+async function executeInvoiceAction(inv: Invoice, action: () => Promise<unknown>) {
   actionLoadingId.value = inv.id
   actionMessage.value = ''
   actionError.value = ''
@@ -93,21 +97,68 @@ async function runInvoiceAction(inv: Invoice, action: () => Promise<unknown>, su
     await action()
     if (inv.status === 'error')
       throw new Error(inv.errorMessage || 'A operação fiscal não foi concluída.')
-    actionMessage.value = successMessage
-  }
-  catch (error) {
-    actionError.value = error instanceof Error ? error.message : 'Não foi possível concluir a operação fiscal.'
   }
   finally {
     actionLoadingId.value = ''
   }
 }
 
-function issue(inv: Invoice) {
-  return runInvoiceAction(inv, () => finance.issueInvoice(inv.id), 'Emissão fiscal processada.')
+async function runInvoiceAction(inv: Invoice, action: () => Promise<unknown>, successMessage: string) {
+  try {
+    await executeInvoiceAction(inv, action)
+    actionMessage.value = successMessage
+  }
+  catch (error) {
+    actionError.value = error instanceof Error ? error.message : 'Não foi possível concluir a operação fiscal.'
+  }
 }
+
 function retry(inv: Invoice) {
   return runInvoiceAction(inv, () => finance.retryInvoice(inv.id), 'Consulta fiscal processada.')
+}
+
+// 👉 Emitir (revisão + confirmação antes de enviar à prefeitura)
+const issueConfirm = ref(false)
+const issueTarget = ref<Invoice | null>(null)
+
+// 'issue' = primeira emissão; 'resend' = reenvio de nota com erro (também pode emitir)
+const issueMode = ref<'issue' | 'resend'>('issue')
+
+const issueEnvironment = computed(() => {
+  if (!nfse.value?.configured)
+    return null
+
+  return nfse.value.ambiente === 'producao' ? 'producao' : 'homologacao'
+})
+
+function askIssue(inv: Invoice, mode: 'issue' | 'resend' = 'issue') {
+  issueTarget.value = inv
+  issueMode.value = mode
+  issueConfirm.value = true
+}
+
+async function doIssue() {
+  const inv = issueTarget.value
+  if (!inv)
+    throw new Error('Nenhuma nota selecionada.')
+
+  // Só age se a nota ainda está na situação que abriu o diálogo (igual aos
+  // botões da lista), para não reenviar uma nota que já mudou de situação.
+  const expected = issueMode.value === 'resend' ? 'error' : 'pending'
+  if (inv.status !== expected)
+    throw new Error('A situação desta nota mudou. Volte e confira a situação dela na lista.')
+
+  await executeInvoiceAction(inv, () => issueMode.value === 'resend'
+    ? finance.retryInvoice(inv.id)
+    : finance.issueInvoice(inv.id))
+
+  // A mensagem segue a situação real da nota depois da resposta da prefeitura.
+  if (inv.status === 'issued')
+    actionMessage.value = inv.invoiceNumber ? `NFS-e ${inv.invoiceNumber} emitida.` : 'NFS-e emitida.'
+  else if (inv.status === 'processing')
+    actionMessage.value = 'Enviada para a prefeitura — aguardando processamento.'
+  else
+    throw new Error(inv.errorMessage || 'A NFS-e não foi emitida. Confira a situação dela na lista.')
 }
 
 // 👉 Cancelar (confirmação)
@@ -118,12 +169,16 @@ function askCancel(inv: Invoice) {
   confirm.value = true
 }
 async function doCancel() {
-  if (target.value) {
-    const invoice = target.value
+  const invoice = target.value
+  if (!invoice)
+    throw new Error('Nenhuma nota selecionada.')
+  if (invoice.status !== 'issued')
+    throw new Error('Esta nota não está mais emitida. Volte e confira a situação dela na lista.')
 
-    confirm.value = false
-    await runInvoiceAction(invoice, () => finance.cancelInvoice(invoice.id), 'NFS-e cancelada com sucesso.')
-  }
+  await executeInvoiceAction(invoice, () => finance.cancelInvoice(invoice.id))
+  if (invoice.status !== 'cancelled')
+    throw new Error(invoice.errorMessage || 'A NFS-e não foi cancelada.')
+  actionMessage.value = 'NFS-e cancelada com sucesso.'
 }
 </script>
 
@@ -329,7 +384,8 @@ async function doCancel() {
             <IconBtn
               v-if="item.status === 'pending' && app.canManageFinance"
               :disabled="actionLoadingId === item.id"
-              @click="issue(item)"
+              aria-label="Emitir"
+              @click="askIssue(item)"
             >
               <VIcon icon="ri-send-plane-line" />
               <VTooltip
@@ -351,6 +407,7 @@ async function doCancel() {
             <IconBtn
               v-if="item.status === 'processing'"
               :disabled="actionLoadingId === item.id"
+              aria-label="Atualizar situação na SEFIN"
               @click="retry(item)"
             >
               <VIcon icon="ri-refresh-line" />
@@ -365,7 +422,8 @@ async function doCancel() {
             <IconBtn
               v-if="item.status === 'error' && app.canManageFinance"
               :disabled="actionLoadingId === item.id"
-              @click="retry(item)"
+              aria-label="Reenviar"
+              @click="askIssue(item, 'resend')"
             >
               <VIcon icon="ri-refresh-line" />
               <VTooltip
@@ -378,6 +436,7 @@ async function doCancel() {
 
             <IconBtn
               v-if="item.status === 'issued'"
+              aria-label="Ver detalhes"
               @click="openDetail(item)"
             >
               <VIcon icon="ri-eye-line" />
@@ -392,6 +451,7 @@ async function doCancel() {
             <IconBtn
               v-if="item.status === 'issued' && app.canManageFinance"
               :disabled="actionLoadingId === item.id"
+              aria-label="Cancelar"
               @click="askCancel(item)"
             >
               <VIcon icon="ri-close-circle-line" />
@@ -516,10 +576,62 @@ async function doCancel() {
     </VDialog>
 
     <ConfirmDialog
+      v-model="issueConfirm"
+      :title="issueMode === 'resend' ? 'Reenviar NFS-e' : 'Emitir NFS-e'"
+      :confirm-text="issueMode === 'resend' ? 'Reenviar NFS-e' : 'Emitir NFS-e'"
+      :action="doIssue"
+    >
+      <template v-if="issueTarget">
+        <p class="mb-3">
+          Confira os dados antes de enviar à prefeitura. Depois de emitida, a nota só pode ser desfeita por cancelamento.
+        </p>
+        <VList
+          density="compact"
+          class="py-0"
+        >
+          <VListItem
+            class="px-0"
+            title="Tomador"
+            :subtitle="`${issueTarget.takerName} · ${formatDocument(issueTarget.takerDocument)}`"
+          />
+          <VListItem
+            class="px-0"
+            title="Valor"
+            :subtitle="`${formatBRL(issueTarget.amount)} · ISS ${formatPercent(issueTarget.issRate)}`"
+          />
+          <VListItem
+            class="px-0"
+            title="Empresa emissora"
+            :subtitle="app.currentCompany.tradeName"
+          />
+          <VListItem
+            v-if="issueEnvironment"
+            class="px-0"
+            title="Ambiente"
+          >
+            <VListItemSubtitle>
+              <VChip
+                size="small"
+                label
+                :color="issueEnvironment === 'producao' ? 'error' : 'info'"
+                class="mt-1"
+              >
+                {{ issueEnvironment === 'producao' ? 'PRODUÇÃO — nota com valor fiscal' : 'Homologação — ambiente de teste' }}
+              </VChip>
+            </VListItemSubtitle>
+          </VListItem>
+        </VList>
+      </template>
+    </ConfirmDialog>
+
+    <ConfirmDialog
       v-model="confirm"
       title="Cancelar NFS-e"
       :message="`Deseja cancelar a NFS-e ${target?.invoiceNumber || ''} de ${target?.takerName}?`"
-      @confirm="doCancel"
+      confirm-text="Cancelar NFS-e"
+      confirm-color="error"
+      cancel-text="Voltar"
+      :action="doCancel"
     />
   </div>
 </template>

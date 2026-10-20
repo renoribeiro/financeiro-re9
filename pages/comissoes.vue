@@ -71,7 +71,6 @@ const headers = [
 // 👉 Detalhe
 const dialog = ref(false)
 const current = ref<Commission | null>(null)
-const actionError = ref('')
 
 const detail = computed(() => {
   if (!current.value)
@@ -90,26 +89,112 @@ function openDetail(c: Commission) {
   current.value = c
   dialog.value = true
 }
-async function receiveInstallment(receivableId?: string) {
-  if (receivableId) {
-    actionError.value = ''
-    try {
-      await finance.receiveReceivable(receivableId)
-    }
-    catch (error) {
-      actionError.value = error instanceof Error ? error.message : 'Não foi possível receber a parcela.'
-    }
+
+// 👉 Receber parcela / pagar repasse — sempre com confirmação.
+// A gravação é a mesma de antes (receiveReceivable / payPayable sem opções):
+// o store liquida todo o saldo em aberto, com data de agora; no recebimento a
+// forma é Pix (padrão do store) e no repasse nenhuma forma é informada.
+const busyId = ref<string | null>(null)
+const confirmDateLabel = ref('')
+
+// O servidor grava a data do caixa pelo dia em UTC: depois das 21h (Brasília)
+// isso já é o dia seguinte. A confirmação mostra a data que de fato será gravada.
+const confirmDateShifted = ref(false)
+function prepareConfirmDate() {
+  const cashDate = new Date().toISOString().slice(0, 10)
+
+  confirmDateLabel.value = formatDate(cashDate)
+  confirmDateShifted.value = cashDate !== todayISO()
+}
+
+const receiveConfirm = ref(false)
+const receiveTarget = ref<{ receivableId: string; installmentNumber: number } | null>(null)
+
+const receiveInfo = computed(() => {
+  const id = receiveTarget.value?.receivableId
+  const receivable = id ? finance.receivables.find(item => item.id === id) : undefined
+  if (!receivable)
+    return null
+
+  return {
+    amount: Math.max(0, receivable.amount - (receivable.receivedAmount ?? 0)),
+    payer: receivable.clientName || '—',
+    emitsInvoice: receivable.invoiceRule === 'on_receive',
+  }
+})
+
+// Só oferece "Receber" quando a conta vinculada ainda pode receber baixa (o
+// servidor recusa contas canceladas ou já quitadas).
+function canSettleReceivable(receivableId: string) {
+  const receivable = finance.receivables.find(r => r.id === receivableId)
+
+  return !receivable || isReceivablePending(receivable)
+}
+
+function canSettlePayable(payableId: string) {
+  const payable = finance.payables.find(p => p.id === payableId)
+
+  return !payable || isPayablePending(payable)
+}
+
+function askReceive(receivableId: string | undefined, installmentNumber: number) {
+  if (!receivableId || busyId.value)
+    return
+  receiveTarget.value = { receivableId, installmentNumber }
+  prepareConfirmDate()
+  receiveConfirm.value = true
+}
+
+async function confirmReceive() {
+  const receivableId = receiveTarget.value?.receivableId
+  if (!receivableId)
+    return
+  busyId.value = receivableId
+  try {
+    await finance.receiveReceivable(receivableId)
+  }
+  finally {
+    busyId.value = null
   }
 }
-async function paySplit(payableId?: string) {
-  if (payableId) {
-    actionError.value = ''
-    try {
-      await finance.payPayable(payableId)
-    }
-    catch (error) {
-      actionError.value = error instanceof Error ? error.message : 'Não foi possível pagar o repasse.'
-    }
+
+const payConfirm = ref(false)
+const payTarget = ref<{ payableId: string; beneficiary: string } | null>(null)
+
+const payInfo = computed(() => {
+  const id = payTarget.value?.payableId
+  const payable = id ? finance.payables.find(item => item.id === id) : undefined
+  if (!payable)
+    return null
+
+  return {
+    amount: Math.max(0, payable.amount - (payable.paidAmount ?? 0)),
+  }
+})
+
+function askPay(payableId: string | undefined, beneficiaryType: string, beneficiaryId?: string) {
+  if (!payableId || busyId.value)
+    return
+  const label = beneficiaryTypeLabels[beneficiaryType] ?? beneficiaryType
+
+  payTarget.value = {
+    payableId,
+    beneficiary: beneficiaryId ? `${label} — ${finance.employeeName(beneficiaryId)}` : label,
+  }
+  prepareConfirmDate()
+  payConfirm.value = true
+}
+
+async function confirmPay() {
+  const payableId = payTarget.value?.payableId
+  if (!payableId)
+    return
+  busyId.value = payableId
+  try {
+    await finance.payPayable(payableId)
+  }
+  finally {
+    busyId.value = null
   }
 }
 
@@ -129,6 +214,8 @@ const editForm = ref({
   notes: '',
 })
 
+const editGuard = useDiscardGuard(() => editForm.value)
+
 const receiptTypeOptions = Object.entries(receiptTypeLabels).map(([value, title]) => ({ value, title }))
 
 function openEdit(c: Commission) {
@@ -145,12 +232,23 @@ function openEdit(c: Commission) {
     captadorPct: splits.find(sp => sp.beneficiaryType === 'captador')?.percentage ?? 0,
     notes: c.notes ?? '',
   }
+  editGuard.arm()
   formError.value = ''
   dialog.value = false
   editDialog.value = true
 }
 
+function cancelEdit() {
+  if (saving.value)
+    return
+  editGuard.requestClose(() => {
+    editDialog.value = false
+  })
+}
+
 async function saveCommission() {
+  if (saving.value)
+    return
   const { valid } = await editFormRef.value.validate()
   if (!valid)
     return
@@ -176,24 +274,18 @@ async function saveCommission() {
 
 const deleteDialog = ref(false)
 const deleteTarget = ref<Commission | null>(null)
-const deleteError = ref('')
 
 function askDelete(c: Commission) {
   deleteTarget.value = c
-  deleteError.value = ''
   deleteDialog.value = true
 }
 
+// Erros sobem para o ConfirmDialog, que os mostra dentro dele.
 async function confirmDelete() {
   if (!deleteTarget.value)
     return
-  try {
-    await finance.deleteCommission(deleteTarget.value.id)
-    deleteTarget.value = null
-  }
-  catch (error) {
-    deleteError.value = (error as Error).message
-  }
+  await finance.deleteCommission(deleteTarget.value.id)
+  deleteTarget.value = null
 }
 </script>
 
@@ -481,11 +573,13 @@ async function confirmDelete() {
                 </td>
                 <td class="text-end">
                   <VBtn
-                    v-if="app.canManageFinance && inst.status !== 'received' && inst.receivableId"
+                    v-if="app.canManageFinance && inst.status !== 'received' && inst.receivableId && canSettleReceivable(inst.receivableId)"
                     size="x-small"
                     color="success"
                     variant="tonal"
-                    @click="receiveInstallment(inst.receivableId)"
+                    :loading="busyId === inst.receivableId"
+                    :disabled="busyId !== null"
+                    @click="askReceive(inst.receivableId, inst.installmentNumber)"
                   >
                     Receber
                   </VBtn>
@@ -529,11 +623,13 @@ async function confirmDelete() {
                 </td>
                 <td class="text-end">
                   <VBtn
-                    v-if="app.canManageFinance && sp.status === 'pending' && sp.payableId"
+                    v-if="app.canManageFinance && sp.status === 'pending' && sp.payableId && canSettlePayable(sp.payableId)"
                     size="x-small"
                     color="primary"
                     variant="tonal"
-                    @click="paySplit(sp.payableId)"
+                    :loading="busyId === sp.payableId"
+                    :disabled="busyId !== null"
+                    @click="askPay(sp.payableId, sp.beneficiaryType, sp.beneficiaryId)"
                   >
                     Pagar repasse
                   </VBtn>
@@ -575,6 +671,7 @@ async function confirmDelete() {
           <VCardSubtitle>As parcelas e contas a receber serão sincronizadas automaticamente.</VCardSubtitle>
         </VCardItem>
         <VCardText>
+          <DialogCompanyContext class="mb-4" />
           <VAlert
             type="info"
             variant="tonal"
@@ -588,6 +685,7 @@ async function confirmDelete() {
             variant="tonal"
             density="compact"
             class="mb-4"
+            role="alert"
             :text="formError"
           />
           <VForm
@@ -680,12 +778,14 @@ async function confirmDelete() {
           <VBtn
             variant="tonal"
             color="secondary"
-            @click="editDialog = false"
+            :disabled="saving"
+            @click="cancelEdit"
           >
             Cancelar
           </VBtn>
           <VBtn
             :loading="saving"
+            :disabled="saving"
             @click="saveCommission"
           >
             Salvar alterações
@@ -694,30 +794,94 @@ async function confirmDelete() {
       </VCard>
     </VDialog>
 
-    <VAlert
-      v-if="deleteError"
-      type="error"
-      variant="tonal"
-      closable
-      class="mt-4"
-      :text="deleteError"
-      @click:close="deleteError = ''"
+    <ConfirmDialog
+      v-model="editGuard.prompt.value"
+      v-bind="editGuard.dialogProps"
+      :action="editGuard.discard"
     />
 
-    <VAlert
-      v-if="actionError"
-      type="error"
-      variant="tonal"
-      class="mb-4"
-      :text="actionError"
-    />
+    <!-- Confirmação: receber parcela da comissão -->
+    <ConfirmDialog
+      v-model="receiveConfirm"
+      title="Confirmar recebimento"
+      confirm-text="Confirmar recebimento"
+      confirm-color="success"
+      :action="confirmReceive"
+    >
+      <DialogCompanyContext class="mb-4" />
+      <template v-if="receiveInfo">
+        <div class="mb-2">
+          Será registrado o recebimento da parcela {{ receiveTarget?.installmentNumber }} da comissão:
+        </div>
+        <div>Valor: <strong>{{ formatBRL(receiveInfo.amount) }}</strong> (todo o saldo em aberto da parcela)</div>
+        <div>Data no caixa: <strong>{{ confirmDateLabel }}</strong></div>
+        <VAlert
+          v-if="confirmDateShifted"
+          type="warning"
+          variant="tonal"
+          density="compact"
+          class="my-2"
+        >
+          Depois das 21h o sistema registra no caixa a data do dia seguinte (correção prevista). Se preferir, faça esta baixa amanhã.
+        </VAlert>
+        <div>Forma de recebimento: <strong>Pix</strong></div>
+        <div>Quem paga: <strong>{{ receiveInfo.payer }}</strong></div>
+        <div>Quem recebe: <strong>{{ app.currentCompany.tradeName }}</strong></div>
+        <VAlert
+          v-if="receiveInfo.emitsInvoice"
+          type="info"
+          variant="tonal"
+          density="compact"
+          class="mt-4"
+        >
+          Esta conta está configurada para emitir NFS-e ao receber: a emissão da nota será iniciada automaticamente após a confirmação.
+        </VAlert>
+      </template>
+      <div v-else>
+        Confirma o recebimento desta parcela da comissão?
+      </div>
+    </ConfirmDialog>
+
+    <!-- Confirmação: pagar repasse -->
+    <ConfirmDialog
+      v-model="payConfirm"
+      title="Confirmar pagamento do repasse"
+      confirm-text="Confirmar pagamento"
+      confirm-color="primary"
+      :action="confirmPay"
+    >
+      <DialogCompanyContext class="mb-4" />
+      <template v-if="payInfo">
+        <div class="mb-2">
+          Será registrado o pagamento deste repasse:
+        </div>
+        <div>Valor: <strong>{{ formatBRL(payInfo.amount) }}</strong> (todo o saldo em aberto do repasse)</div>
+        <div>Data no caixa: <strong>{{ confirmDateLabel }}</strong></div>
+        <VAlert
+          v-if="confirmDateShifted"
+          type="warning"
+          variant="tonal"
+          density="compact"
+          class="my-2"
+        >
+          Depois das 21h o sistema registra no caixa a data do dia seguinte (correção prevista). Se preferir, faça esta baixa amanhã.
+        </VAlert>
+        <div>Forma de pagamento: <strong>não informada nesta baixa</strong></div>
+        <div>Quem paga: <strong>{{ app.currentCompany.tradeName }}</strong></div>
+        <div>Quem recebe: <strong>{{ payTarget?.beneficiary }}</strong></div>
+      </template>
+      <div v-else>
+        Confirma o pagamento deste repasse?
+      </div>
+    </ConfirmDialog>
+
     <ConfirmDialog
       v-model="deleteDialog"
       title="Excluir comissão"
       confirm-text="Excluir"
       confirm-color="error"
       message="A comissão, suas parcelas e contas vinculadas ainda não liquidadas serão removidas. Registros com recebimentos ou pagamentos exigem estorno prévio. Deseja continuar?"
-      @confirm="confirmDelete"
+      :action="confirmDelete"
     />
   </div>
 </template>

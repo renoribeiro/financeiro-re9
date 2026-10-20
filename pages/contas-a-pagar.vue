@@ -105,10 +105,40 @@ const snackbar = ref(false)
 const snackbarText = ref('')
 const snackbarColor = ref<'success' | 'error' | 'primary'>('success')
 
+// Erros mostrados dentro dos diálogos abertos (além do aviso no canto da tela)
+const formError = ref('')
+const payError = ref('')
+
 function showMessage(text: string, color: 'success' | 'error' | 'primary' = 'success') {
   snackbarText.value = text
   snackbarColor.value = color
   snackbar.value = true
+}
+
+function showFormError(text: string) {
+  formError.value = text
+  showMessage(text, 'error')
+}
+
+// Pergunta "Descartar alterações?" ao fechar o formulário com algo digitado
+const guard = useDiscardGuard(() => ({
+  editing: editing.value,
+  proofLink: proofLink.value,
+  attachmentReference: attachmentReference.value,
+  paymentSituation: paymentSituation.value,
+  reopenReason: reopenReason.value,
+  beneficiaryKind: beneficiaryKind.value,
+  installmentMode: installmentMode.value,
+  installmentCount: installmentCount.value,
+  pendingFile: payableAttachment.value?.hasPendingFile() ?? false,
+}))
+
+function closeForm() {
+  if (saving.value)
+    return
+  guard.requestClose(() => {
+    dialog.value = false
+  })
 }
 
 function openNew() {
@@ -121,6 +151,8 @@ function openNew() {
   beneficiaryKind.value = 'supplier'
   installmentMode.value = false
   installmentCount.value = 3
+  formError.value = ''
+  guard.arm()
   dialog.value = true
 }
 function openEdit(p: Payable) {
@@ -136,21 +168,33 @@ function openEdit(p: Payable) {
     editing.value.status = 'open'
   beneficiaryKind.value = p.employeeId ? 'employee' : 'supplier'
   installmentMode.value = false
+  formError.value = ''
+  guard.arm()
   dialog.value = true
 }
 async function save() {
+  // Bloqueia o duplo clique (inclusive durante a validação do formulário)
+  if (saving.value)
+    return
+
   const shouldReopen = Boolean(editing.value.id)
     && originalPaidAmount.value > 0
     && paymentSituation.value === 'unpaid'
 
+  formError.value = ''
   if (shouldReopen && !reopenReason.value.trim()) {
-    showMessage('Informe o motivo para marcar a conta como não paga.', 'error')
+    showFormError('Informe o motivo para marcar a conta como não paga.')
 
     return
   }
+  saving.value = true
+
   const { valid } = await formRef.value.validate()
-  if (!valid)
+  if (!valid) {
+    saving.value = false
+
     return
+  }
   const data = { ...editing.value }
 
   data.proofUrl = proofLink.value || attachmentReference.value || undefined
@@ -159,7 +203,6 @@ async function save() {
   else
     data.supplierId = undefined
 
-  saving.value = true
   let accountWasSaved = false
   try {
     if (!data.id && installmentMode.value && installmentCount.value > 1) {
@@ -203,7 +246,7 @@ async function save() {
       ? `Os dados da conta foram salvos, mas não foi possível estornar o pagamento: ${detail}`
       : attachmentFailed ? `A conta foi salva, mas o anexo falhou: ${detail}` : detail
 
-    showMessage(message, 'error')
+    showFormError(message)
   }
   finally {
     saving.value = false
@@ -219,19 +262,22 @@ function openPay(p: Payable) {
   payTarget.value = p
   payAmount.value = payableOutstanding(p)
   payProof.value = ''
+  payError.value = ''
   payDialog.value = true
 }
 async function doPay() {
-  if (!payTarget.value)
+  if (!payTarget.value || actionLoading.value)
     return
   actionLoading.value = true
+  payError.value = ''
   try {
     await finance.payPayable(payTarget.value.id, { amount: payAmount.value, proofUrl: payProof.value || undefined })
     payDialog.value = false
     showMessage('Pagamento registrado com sucesso.')
   }
   catch (error) {
-    showMessage(error instanceof Error ? error.message : 'Não foi possível registrar o pagamento.', 'error')
+    payError.value = error instanceof Error ? error.message : 'Não foi possível registrar o pagamento.'
+    showMessage(payError.value, 'error')
   }
   finally {
     actionLoading.value = false
@@ -239,6 +285,8 @@ async function doPay() {
 }
 
 // 👉 Cancelar
+// As ações abaixo são executadas pelo ConfirmDialog (:action): em caso de falha
+// elas lançam o erro, que aparece dentro do diálogo; ele só fecha no sucesso.
 const cancelDialog = ref(false)
 const cancelTarget = ref<Payable | null>(null)
 function askCancel(p: Payable) {
@@ -247,42 +295,50 @@ function askCancel(p: Payable) {
 }
 async function doCancel() {
   if (!cancelTarget.value)
-    return
-  actionLoading.value = true
-  try {
-    await finance.cancelPayable(cancelTarget.value.id)
-    showMessage('Conta cancelada com sucesso.')
-  }
-  catch (error) {
-    showMessage(error instanceof Error ? error.message : 'Não foi possível cancelar a conta.', 'error')
-  }
-  finally {
-    actionLoading.value = false
-    cancelTarget.value = null
-  }
+    throw new Error('Nenhuma conta selecionada para cancelar.')
+  await finance.cancelPayable(cancelTarget.value.id)
+  showMessage('Conta cancelada com sucesso.')
+}
+
+// 👉 Exclusão permanente
+// Espelha a trava do servidor (trigger private.guard_financial_account_delete,
+// versão mais recente em supabase/migrations/20260809204545_commercial_crud_and_point_in_time_history.sql).
+// Só bloqueia quando a tela tem certeza de que o servidor recusaria; o que a
+// tela não enxerga continua barrado pelo servidor, com o erro dentro do diálogo.
+const payableIdsWithHistory = computed(() => new Set([
+  ...finance.settlements.map(s => s.payableId),
+  ...finance.transactions.map(t => t.payableId),
+].filter(Boolean)))
+
+const payableIdsWithCommission = computed(() => new Set(finance.commissionSplits.map(s => s.payableId).filter(Boolean)))
+const payableIdsWithInstallments = computed(() => new Set(finance.payables.map(p => p.parentPayableId).filter(Boolean)))
+
+function deleteBlockReason(p: Payable): string {
+  if ((p.paidAmount ?? 0) > 0 || p.status === 'partial' || p.status === 'paid')
+    return 'Conta com pagamento registrado não pode ser excluída. Para desfazer o pagamento, edite a conta e marque “Não pago”.'
+  if (payableIdsWithHistory.value.has(p.id))
+    return 'Conta com histórico de pagamento (mesmo estornado) não pode ser excluída. Use “Cancelar conta”.'
+  if (payableIdsWithCommission.value.has(p.id))
+    return 'Conta vinculada a comissão não pode ser excluída.'
+  if (payableIdsWithInstallments.value.has(p.id))
+    return 'Conta com parcelas vinculadas não pode ser excluída individualmente.'
+
+  return ''
 }
 
 const deleteDialog = ref(false)
 const deleteTarget = ref<Payable | null>(null)
 function askDelete(p: Payable) {
+  if (deleteBlockReason(p))
+    return
   deleteTarget.value = p
   deleteDialog.value = true
 }
 async function doDelete() {
   if (!deleteTarget.value)
-    return
-  actionLoading.value = true
-  try {
-    await finance.deletePayable(deleteTarget.value.id)
-    showMessage('Conta excluída permanentemente.')
-  }
-  catch (error) {
-    showMessage(error instanceof Error ? error.message : 'Não foi possível excluir a conta.', 'error')
-  }
-  finally {
-    actionLoading.value = false
-    deleteTarget.value = null
-  }
+    throw new Error('Nenhuma conta selecionada para excluir.')
+  await finance.deletePayable(deleteTarget.value.id)
+  showMessage('Conta excluída permanentemente.')
 }
 
 // 👉 Recorrências
@@ -537,17 +593,26 @@ async function runRecurrences() {
                 Cancelar conta
               </VTooltip>
             </IconBtn>
-            <IconBtn
+            <!-- O tooltip fica no <span> porque botão desabilitado não recebe o mouse -->
+            <span
               v-if="app.canManageFinance"
-              color="error"
-              aria-label="Excluir conta permanentemente"
-              @click="askDelete(item)"
+              class="d-inline-flex"
             >
-              <VIcon icon="ri-delete-bin-line" />
-              <VTooltip activator="parent">
-                Excluir permanentemente
+              <IconBtn
+                color="error"
+                :disabled="Boolean(deleteBlockReason(item))"
+                :aria-label="deleteBlockReason(item) || 'Excluir conta permanentemente'"
+                @click="askDelete(item)"
+              >
+                <VIcon icon="ri-delete-bin-line" />
+              </IconBtn>
+              <VTooltip
+                activator="parent"
+                max-width="300"
+              >
+                {{ deleteBlockReason(item) || 'Excluir permanentemente' }}
               </VTooltip>
-            </IconBtn>
+            </span>
           </div>
         </template>
         <template #no-data>
@@ -569,6 +634,17 @@ async function runRecurrences() {
           <VCardTitle>{{ editing.id ? 'Editar conta a pagar' : 'Nova conta a pagar' }}</VCardTitle>
         </VCardItem>
         <VCardText class="account-dialog__body">
+          <DialogCompanyContext class="mb-4" />
+          <VAlert
+            v-if="formError"
+            type="error"
+            variant="tonal"
+            density="compact"
+            role="alert"
+            class="mb-4"
+          >
+            {{ formError }}
+          </VAlert>
           <VForm
             ref="formRef"
             @submit.prevent="save"
@@ -778,7 +854,8 @@ async function runRecurrences() {
           <VBtn
             variant="tonal"
             color="secondary"
-            @click="dialog = false"
+            :disabled="saving"
+            @click="closeForm"
           >
             Cancelar
           </VBtn>
@@ -803,6 +880,17 @@ async function runRecurrences() {
           <VCardTitle>Dar baixa no pagamento</VCardTitle>
         </VCardItem>
         <VCardText>
+          <DialogCompanyContext class="mb-4" />
+          <VAlert
+            v-if="payError"
+            type="error"
+            variant="tonal"
+            density="compact"
+            role="alert"
+            class="mb-4"
+          >
+            {{ payError }}
+          </VAlert>
           <p class="mb-4">
             {{ payTarget?.description }}
           </p>
@@ -846,19 +934,32 @@ async function runRecurrences() {
     <ConfirmDialog
       v-model="cancelDialog"
       title="Cancelar conta"
-      :message="`Deseja cancelar '${cancelTarget?.description}'?`"
       confirm-text="Cancelar conta"
       confirm-color="error"
-      @confirm="doCancel"
-    />
+      cancel-text="Manter conta"
+      :action="doCancel"
+    >
+      <DialogCompanyContext class="mb-4" />
+      <div>Deseja cancelar '{{ cancelTarget?.description }}'?</div>
+    </ConfirmDialog>
 
     <ConfirmDialog
       v-model="deleteDialog"
       title="Excluir conta permanentemente"
-      :message="`A conta '${deleteTarget?.description}' será removida definitivamente. Esta ação só é permitida quando não há baixa, transação, comissão ou outro vínculo. Deseja continuar?`"
       confirm-text="Excluir permanentemente"
       confirm-color="error"
-      @confirm="doDelete"
+      :action="doDelete"
+    >
+      <DialogCompanyContext class="mb-4" />
+      <div>
+        A conta '{{ deleteTarget?.description }}' será removida definitivamente. Esta ação só é permitida quando não há baixa, transação, comissão ou outro vínculo — inclusive pagamentos já estornados. Se houver, o sistema recusa a exclusão e mostra o motivo aqui. Deseja continuar?
+      </div>
+    </ConfirmDialog>
+
+    <ConfirmDialog
+      v-model="guard.prompt.value"
+      v-bind="guard.dialogProps"
+      :action="guard.discard"
     />
   </div>
 </template>

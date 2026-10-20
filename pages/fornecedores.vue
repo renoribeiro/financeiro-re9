@@ -39,7 +39,9 @@ const headers = [
 const dialog = ref(false)
 const formRef = ref()
 const editing = ref<Partial<Supplier>>({})
-const actionError = ref('')
+const formError = ref('')
+const saving = ref(false)
+const guard = useDiscardGuard(() => editing.value)
 
 const categoryOptions = computed(() =>
   finance.companyChartAccounts
@@ -49,6 +51,8 @@ const categoryOptions = computed(() =>
 
 function openNew() {
   editing.value = { documentType: 'cnpj', bankInfo: {}, isActive: true }
+  formError.value = ''
+  guard.arm()
   dialog.value = true
 }
 function openEdit(s: Supplier) {
@@ -57,19 +61,32 @@ function openEdit(s: Supplier) {
   // garante bankInfo para o v-model da chave PIX não lançar
   if (!editing.value.bankInfo)
     editing.value.bankInfo = {}
+  formError.value = ''
+  guard.arm()
   dialog.value = true
 }
+function closeDialog() {
+  guard.requestClose(() => {
+    dialog.value = false
+  })
+}
 async function save() {
+  if (saving.value)
+    return
   const { valid } = await formRef.value.validate()
   if (!valid)
     return
-  actionError.value = ''
+  formError.value = ''
+  saving.value = true
   try {
     await finance.saveSupplier(editing.value)
     dialog.value = false
   }
   catch (error) {
-    actionError.value = error instanceof Error ? error.message : 'Não foi possível salvar o fornecedor.'
+    formError.value = error instanceof Error ? error.message : 'Não foi possível salvar o fornecedor.'
+  }
+  finally {
+    saving.value = false
   }
 }
 
@@ -80,15 +97,11 @@ function askToggle(s: Supplier) {
   target.value = s
   confirm.value = true
 }
+
+// Erros aparecem dentro do diálogo de confirmação (ele só fecha no sucesso).
 async function doToggle() {
-  if (target.value) {
-    try {
-      await finance.toggleActive('suppliers', target.value.id)
-    }
-    catch (error) {
-      actionError.value = error instanceof Error ? error.message : 'Não foi possível alterar o fornecedor.'
-    }
-  }
+  if (target.value)
+    await finance.toggleActive('suppliers', target.value.id)
 }
 </script>
 
@@ -109,14 +122,6 @@ async function doToggle() {
         </VBtn>
       </template>
     </AppPageHeader>
-
-    <VAlert
-      v-if="actionError"
-      type="error"
-      variant="tonal"
-      class="mb-4"
-      :text="actionError"
-    />
 
     <VCard>
       <VCardText class="d-flex flex-wrap gap-4">
@@ -263,6 +268,16 @@ async function doToggle() {
           <VCardTitle>{{ editing.id ? 'Editar fornecedor' : 'Novo fornecedor' }}</VCardTitle>
         </VCardItem>
         <VCardText>
+          <DialogCompanyContext class="mb-4" />
+          <VAlert
+            v-if="formError"
+            type="error"
+            variant="tonal"
+            density="compact"
+            class="mb-4"
+            role="alert"
+            :text="formError"
+          />
           <VForm
             ref="formRef"
             @submit.prevent="save"
@@ -359,11 +374,16 @@ async function doToggle() {
           <VBtn
             variant="tonal"
             color="secondary"
-            @click="dialog = false"
+            :disabled="saving"
+            @click="closeDialog"
           >
             Cancelar
           </VBtn>
-          <VBtn @click="save">
+          <VBtn
+            :loading="saving"
+            :disabled="saving"
+            @click="save"
+          >
             Salvar
           </VBtn>
         </VCardText>
@@ -374,7 +394,14 @@ async function doToggle() {
       v-model="confirm"
       :title="target?.isActive ? 'Desativar fornecedor' : 'Ativar fornecedor'"
       :message="`Deseja ${target?.isActive ? 'desativar' : 'ativar'} ${target?.tradeName || target?.legalName}?`"
-      @confirm="doToggle"
+      :confirm-text="target?.isActive ? 'Desativar' : 'Ativar'"
+      :confirm-color="target?.isActive ? 'error' : 'primary'"
+      :action="doToggle"
+    />
+    <ConfirmDialog
+      v-model="guard.prompt.value"
+      v-bind="guard.dialogProps"
+      :action="guard.discard"
     />
   </div>
 </template>

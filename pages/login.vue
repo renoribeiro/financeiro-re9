@@ -8,7 +8,17 @@ import authV1Tree2 from '@images/pages/auth-v1-tree-2.png'
 import authV1Tree from '@images/pages/auth-v1-tree.png'
 
 const auth = useAuthStore()
-const router = useRouter()
+const user = useSupabaseUser()
+
+// Depois do login, a sessão do Supabase chega ao app de forma assíncrona. Ir
+// para o Dashboard antes disso fazia a proteção de rota devolver o usuário ao
+// login. Por isso navegamos só quando o usuário logado já está disponível.
+const signedIn = ref(false)
+
+watch([user, signedIn], ([current, done]) => {
+  if (current && done)
+    navigateTo('/dashboard')
+}, { immediate: true })
 
 const form = ref({
   email: '',
@@ -24,7 +34,7 @@ async function onSubmit() {
   loading.value = true
   try {
     await auth.login(form.value.email, form.value.password)
-    await router.push('/dashboard')
+    signedIn.value = true
   }
   catch (e) {
     error.value = (e as Error).message === 'Invalid login credentials'

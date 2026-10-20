@@ -30,14 +30,24 @@ const formRef = ref()
 const loading = ref(false)
 const errorMsg = ref<string | null>(null)
 const form = ref<Partial<Client>>({})
+const guard = useDiscardGuard(() => form.value)
 
 function openNew() {
   form.value = {}
   errorMsg.value = null
+  guard.arm()
   dialog.value = true
 }
 
+function closeDialog() {
+  guard.requestClose(() => {
+    dialog.value = false
+  })
+}
+
 async function save() {
+  if (loading.value)
+    return
   const { valid } = await formRef.value.validate()
   if (!valid)
     return
@@ -126,6 +136,7 @@ async function save() {
           <VCardTitle>Novo cliente</VCardTitle>
         </VCardItem>
         <VCardText>
+          <DialogCompanyContext class="mb-4" />
           <VForm
             ref="formRef"
             @submit.prevent="save"
@@ -136,6 +147,7 @@ async function save() {
               variant="tonal"
               density="compact"
               class="mb-4"
+              role="alert"
               :text="errorMsg"
             />
             <VRow>
@@ -190,12 +202,14 @@ async function save() {
           <VBtn
             variant="tonal"
             color="secondary"
-            @click="dialog = false"
+            :disabled="loading"
+            @click="closeDialog"
           >
             Cancelar
           </VBtn>
           <VBtn
             :loading="loading"
+            :disabled="loading"
             @click="save"
           >
             Salvar
@@ -203,5 +217,11 @@ async function save() {
         </VCardText>
       </VCard>
     </VDialog>
+
+    <ConfirmDialog
+      v-model="guard.prompt.value"
+      v-bind="guard.dialogProps"
+      :action="guard.discard"
+    />
   </div>
 </template>

@@ -94,6 +94,8 @@ const companyMessage = ref('')
 const companyError = ref('')
 
 async function saveCompany() {
+  if (savingCompany.value)
+    return
   savingCompany.value = true
   companyMessage.value = ''
   companyError.value = ''
@@ -142,6 +144,8 @@ const invoiceMessage = ref('')
 const invoiceError = ref('')
 
 async function saveInvoiceConfig() {
+  if (invoiceSaving.value)
+    return
   invoiceSaving.value = true
   invoiceMessage.value = ''
   invoiceError.value = ''
@@ -216,6 +220,8 @@ const inviteRoles = computed(() => [
 ])
 
 async function sendInvite() {
+  if (inviteLoading.value)
+    return
   inviteError.value = ''
   inviteMessage.value = ''
   inviteLoading.value = true
@@ -285,9 +291,11 @@ async function sendInvite() {
           <!-- Aba: Empresa -->
           <VWindowItem value="company">
             <VForm @submit.prevent="saveCompany">
+              <DialogCompanyContext class="mb-4" />
               <VAlert
                 v-if="companyMessage || companyError"
                 :type="companyError ? 'error' : 'success'"
+                :role="companyError ? 'alert' : 'status'"
                 variant="tonal"
                 class="mb-4"
                 :text="companyError || companyMessage"
@@ -410,7 +418,7 @@ async function sendInvite() {
               </VRow>
               <div class="d-flex justify-end mt-2">
                 <VBtn
-                  :disabled="app.isReadOnly"
+                  :disabled="app.isReadOnly || savingCompany"
                   :loading="savingCompany"
                   prepend-icon="ri-save-line"
                   @click="saveCompany"
@@ -424,9 +432,11 @@ async function sendInvite() {
           <!-- Aba: NFS-e -->
           <VWindowItem value="invoice">
             <VForm @submit.prevent="saveInvoiceConfig">
+              <DialogCompanyContext class="mb-4" />
               <VAlert
                 v-if="invoiceMessage || invoiceError"
                 :type="invoiceError ? 'error' : 'success'"
+                :role="invoiceError ? 'alert' : 'status'"
                 variant="tonal"
                 class="mb-4"
                 :text="invoiceError || invoiceMessage"
@@ -505,7 +515,7 @@ async function sendInvite() {
 
               <div class="d-flex justify-end mt-2 mb-6">
                 <VBtn
-                  :disabled="app.isReadOnly"
+                  :disabled="app.isReadOnly || invoiceSaving"
                   :loading="invoiceSaving"
                   prepend-icon="ri-save-line"
                   @click="saveInvoiceConfig"
@@ -696,9 +706,14 @@ async function sendInvite() {
             >
               <VCardTitle>Convidar usuário</VCardTitle>
               <VCardText>
+                <DialogCompanyContext class="mb-2" />
+                <p class="text-body-2 text-medium-emphasis mb-4">
+                  O convite dá acesso a esta empresa, com o perfil escolhido abaixo.
+                </p>
                 <VAlert
                   v-if="inviteMessage || inviteError"
                   :type="inviteError ? 'error' : 'success'"
+                  :role="inviteError ? 'alert' : 'status'"
                   variant="tonal"
                   class="mb-4"
                   :text="inviteError || inviteMessage"
@@ -745,6 +760,7 @@ async function sendInvite() {
                         block
                         height="48"
                         :loading="inviteLoading"
+                        :disabled="inviteLoading"
                       >
                         Convidar
                       </VBtn>

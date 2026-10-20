@@ -11,8 +11,9 @@ const unread = computed(() => financeStore.unreadNotificationCount)
 </script>
 
 <template>
-  <!-- 👉 Principal -->
+  <!-- 👉 Principal (o corretor da imobiliária usa o Portal do Corretor) -->
   <VerticalNavLink
+    v-if="!(appStore.isBroker && appStore.isRealEstate)"
     :item="{
       title: 'Dashboard',
       icon: 'ri-dashboard-line',

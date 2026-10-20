@@ -4,6 +4,7 @@
 // as empresas/linhas às quais o usuário tem acesso.
 // ============================================================================
 import type { Company, Role, UserProfile } from '@/types/finance'
+import { resolveAuthUserId } from '@/utils/authUser'
 
 const toCamel = (s: string) => s.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())
 
@@ -109,6 +110,12 @@ export async function loadAppData(): Promise<AppData | null> {
   if (!user.value)
     return null
 
+  // `useSupabaseUser()` devolve os claims do JWT: o id do usuário vem em `sub`
+  // (não em `id`). Sem isso o app não reconhecia quem está logado.
+  const authUserId = resolveAuthUserId(user.value)
+  if (!authUserId)
+    return null
+
   const results = await Promise.all(TABLES.map(t => supabase.from(t as any).select('*')))
   const data: Record<string, Record<string, unknown>[]> = {}
 
@@ -124,16 +131,16 @@ export async function loadAppData(): Promise<AppData | null> {
   const companies = camelizeRows(data.companies) as unknown as Company[]
 
   const members = data.company_members as unknown as { user_id: string; company_id: string; role: Role }[]
-  const profile = data.user_profiles.find(p => p.id === user.value!.id) as Record<string, unknown> | undefined
+  const profile = data.user_profiles.find(p => p.id === authUserId) as Record<string, unknown> | undefined
 
   const currentUser: UserProfile = {
-    id: user.value.id,
+    id: authUserId,
     fullName: (profile?.full_name as string) || (profile?.email as string) || (user.value.email ?? 'Usuário'),
     email: (profile?.email as string) || (user.value.email ?? ''),
     phone: (profile?.phone as string) || undefined,
     avatarColor: 'primary',
     roles: members
-      .filter(m => m.user_id === user.value!.id)
+      .filter(m => m.user_id === authUserId)
       .map(m => ({ companyId: m.company_id, role: m.role })),
   }
 

@@ -37,7 +37,9 @@ const typeOptions = typeOrder.map(value => ({ title: accountTypeLabels[value], v
 const dialog = ref(false)
 const formRef = ref()
 const editing = ref<Partial<ChartAccount>>({})
-const actionError = ref('')
+const formError = ref('')
+const saving = ref(false)
+const guard = useDiscardGuard(() => editing.value)
 
 const parentOptions = computed(() =>
   finance.companyChartAccounts
@@ -48,23 +50,38 @@ const parentOptions = computed(() =>
 
 function openNew() {
   editing.value = { type: 'expense', parentId: null, isActive: true }
+  formError.value = ''
+  guard.arm()
   dialog.value = true
 }
 function openEdit(a: ChartAccount) {
   editing.value = structuredClone(toRaw(a))
+  formError.value = ''
+  guard.arm()
   dialog.value = true
 }
+function closeDialog() {
+  guard.requestClose(() => {
+    dialog.value = false
+  })
+}
 async function save() {
+  if (saving.value)
+    return
   const { valid } = await formRef.value.validate()
   if (!valid)
     return
-  actionError.value = ''
+  formError.value = ''
+  saving.value = true
   try {
     await finance.saveChartAccount(editing.value)
     dialog.value = false
   }
   catch (error) {
-    actionError.value = error instanceof Error ? error.message : 'Não foi possível salvar a conta contábil.'
+    formError.value = error instanceof Error ? error.message : 'Não foi possível salvar a conta contábil.'
+  }
+  finally {
+    saving.value = false
   }
 }
 
@@ -75,15 +92,11 @@ function askToggle(a: ChartAccount) {
   target.value = a
   confirm.value = true
 }
+
+// Erros aparecem dentro do diálogo de confirmação (ele só fecha no sucesso).
 async function doToggle() {
-  if (target.value) {
-    try {
-      await finance.toggleActive('chartAccounts', target.value.id)
-    }
-    catch (error) {
-      actionError.value = error instanceof Error ? error.message : 'Não foi possível alterar a conta contábil.'
-    }
-  }
+  if (target.value)
+    await finance.toggleActive('chartAccounts', target.value.id)
 }
 </script>
 
@@ -104,14 +117,6 @@ async function doToggle() {
         </VBtn>
       </template>
     </AppPageHeader>
-
-    <VAlert
-      v-if="actionError"
-      type="error"
-      variant="tonal"
-      class="mb-4"
-      :text="actionError"
-    />
 
     <VRow>
       <VCol
@@ -213,6 +218,16 @@ async function doToggle() {
           <VCardTitle>{{ editing.id ? 'Editar conta' : 'Nova conta' }}</VCardTitle>
         </VCardItem>
         <VCardText>
+          <DialogCompanyContext class="mb-4" />
+          <VAlert
+            v-if="formError"
+            type="error"
+            variant="tonal"
+            density="compact"
+            class="mb-4"
+            role="alert"
+            :text="formError"
+          />
           <VForm
             ref="formRef"
             @submit.prevent="save"
@@ -274,11 +289,16 @@ async function doToggle() {
           <VBtn
             variant="tonal"
             color="secondary"
-            @click="dialog = false"
+            :disabled="saving"
+            @click="closeDialog"
           >
             Cancelar
           </VBtn>
-          <VBtn @click="save">
+          <VBtn
+            :loading="saving"
+            :disabled="saving"
+            @click="save"
+          >
             Salvar
           </VBtn>
         </VCardText>
@@ -289,7 +309,14 @@ async function doToggle() {
       v-model="confirm"
       :title="target?.isActive ? 'Desativar conta' : 'Ativar conta'"
       :message="`Deseja ${target?.isActive ? 'desativar' : 'ativar'} a conta ${target?.code} · ${target?.name}?`"
-      @confirm="doToggle"
+      :confirm-text="target?.isActive ? 'Desativar' : 'Ativar'"
+      :confirm-color="target?.isActive ? 'error' : 'primary'"
+      :action="doToggle"
+    />
+    <ConfirmDialog
+      v-model="guard.prompt.value"
+      v-bind="guard.dialogProps"
+      :action="guard.discard"
     />
   </div>
 </template>

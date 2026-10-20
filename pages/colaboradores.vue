@@ -64,7 +64,9 @@ const statusOptions = [
 const dialog = ref(false)
 const formRef = ref()
 const editing = ref<Partial<Employee>>({})
-const actionError = ref('')
+const formError = ref('')
+const saving = ref(false)
+const guard = useDiscardGuard(() => editing.value)
 
 const showSalary = computed(() =>
   editing.value.employmentType === 'clt' || editing.value.employmentType === 'pj',
@@ -72,25 +74,40 @@ const showSalary = computed(() =>
 
 function openNew() {
   editing.value = { employmentType: 'clt', status: 'active', bankInfo: {} }
+  formError.value = ''
+  guard.arm()
   dialog.value = true
 }
 function openEdit(e: Employee) {
   editing.value = structuredClone(toRaw(e))
   if (!editing.value.bankInfo)
     editing.value.bankInfo = {}
+  formError.value = ''
+  guard.arm()
   dialog.value = true
 }
+function closeDialog() {
+  guard.requestClose(() => {
+    dialog.value = false
+  })
+}
 async function save() {
+  if (saving.value)
+    return
   const { valid } = await formRef.value.validate()
   if (!valid)
     return
-  actionError.value = ''
+  formError.value = ''
+  saving.value = true
   try {
     await finance.saveEmployee(editing.value)
     dialog.value = false
   }
   catch (error) {
-    actionError.value = error instanceof Error ? error.message : 'Não foi possível salvar o colaborador.'
+    formError.value = error instanceof Error ? error.message : 'Não foi possível salvar o colaborador.'
+  }
+  finally {
+    saving.value = false
   }
 }
 </script>
@@ -112,14 +129,6 @@ async function save() {
         </VBtn>
       </template>
     </AppPageHeader>
-
-    <VAlert
-      v-if="actionError"
-      type="error"
-      variant="tonal"
-      class="mb-4"
-      :text="actionError"
-    />
 
     <VRow class="mb-2">
       <VCol
@@ -268,6 +277,16 @@ async function save() {
           <VCardTitle>{{ editing.id ? 'Editar colaborador' : 'Novo colaborador' }}</VCardTitle>
         </VCardItem>
         <VCardText>
+          <DialogCompanyContext class="mb-4" />
+          <VAlert
+            v-if="formError"
+            type="error"
+            variant="tonal"
+            density="compact"
+            class="mb-4"
+            role="alert"
+            :text="formError"
+          />
           <VForm
             ref="formRef"
             @submit.prevent="save"
@@ -379,15 +398,25 @@ async function save() {
           <VBtn
             variant="tonal"
             color="secondary"
-            @click="dialog = false"
+            :disabled="saving"
+            @click="closeDialog"
           >
             Cancelar
           </VBtn>
-          <VBtn @click="save">
+          <VBtn
+            :loading="saving"
+            :disabled="saving"
+            @click="save"
+          >
             Salvar
           </VBtn>
         </VCardText>
       </VCard>
     </VDialog>
+    <ConfirmDialog
+      v-model="guard.prompt.value"
+      v-bind="guard.dialogProps"
+      :action="guard.discard"
+    />
   </div>
 </template>

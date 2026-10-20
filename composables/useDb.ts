@@ -633,7 +633,10 @@ export function useDb() {
 
     createNotification(input: Omit<AppNotification, 'id' | 'companyId' | 'createdAt'>) {
       return saveRow('notifications', undefined, {
-        user_id: input.userId ?? app.currentUserId,
+        // Mantém exatamente o que era gravado antes da correção do usuário logado
+        // (currentUserId vinha vazio): notificação sem dono, visível à empresa.
+        // Atribuir um dono mudaria quem a vê — decisão de produto pendente.
+        user_id: input.userId,
         type: input.type,
         title: input.title,
         message: input.message,

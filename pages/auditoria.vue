@@ -110,17 +110,84 @@ const restoreTarget = ref<AuditEntry | null>(null)
 const restoreReason = ref('')
 const restoring = ref(false)
 const restoreError = ref('')
+const RESTORE_WORD = 'RESTAURAR'
+const restoreTyped = ref('')
+const restoreWordOk = computed(() => restoreTyped.value.trim().toUpperCase() === RESTORE_WORD)
+
+// Impacto da restauração: ações desta empresa registradas depois do ponto
+// escolhido (o servidor reverte exatamente as de id maior que o ponto).
+const restoreImpact = ref<{ actions: number; users: number; usersAtLeast: boolean; actionsAtLeast: boolean } | null>(null)
+const restoreImpactLoading = ref(false)
+let restoreImpactRequest = 0
+
+function localImpact(targetId: number) {
+  const after = audit.companyEntries.filter(entry => /^\d+$/.test(entry.id) && Number(entry.id) > targetId)
+  const users = new Set(after.map(entry => entry.userId || entry.userName))
+
+  return { actions: after.length, users: users.size }
+}
+
+async function loadRestoreImpact(entry: AuditEntry) {
+  const request = ++restoreImpactRequest
+  const targetId = Number(entry.id)
+  const local = localImpact(targetId)
+
+  // A lista carrega no máximo 1.000 ações; se estiver cheia, o total pode ser maior.
+  const listMayBeTruncated = audit.companyEntries.length >= 1000
+
+  restoreImpact.value = { ...local, usersAtLeast: listMayBeTruncated, actionsAtLeast: listMayBeTruncated }
+  restoreImpactLoading.value = true
+  try {
+    // Contagem exata no banco (somente leitura) — inclui ações feitas depois de abrir a tela.
+    const supabase = useSupabaseClient() as any
+
+    const { count, error } = await supabase
+      .from('audit_log')
+      .select('id', { count: 'exact', head: true })
+      .eq('company_id', entry.companyId)
+      .gt('id', targetId)
+
+    if (request !== restoreImpactRequest || error || typeof count !== 'number')
+      return
+    restoreImpact.value = {
+      actions: Math.max(count, local.actions),
+      users: local.users,
+      actionsAtLeast: false,
+      usersAtLeast: count > local.actions,
+    }
+  }
+  catch {
+    // Mantém a contagem local (com "pelo menos" quando a lista pode estar cortada).
+  }
+  finally {
+    if (request === restoreImpactRequest)
+      restoreImpactLoading.value = false
+  }
+}
+
+const restoreImpactText = computed(() => {
+  const impact = restoreImpact.value
+  const target = restoreTarget.value
+  if (!impact || !target)
+    return ''
+  const actions = `${impact.actionsAtLeast ? 'pelo menos ' : ''}${impact.actions} ${impact.actions === 1 ? 'ação' : 'ações'}`
+  const users = `${impact.usersAtLeast ? 'pelo menos ' : ''}${impact.users} ${impact.users === 1 ? 'usuário' : 'usuários'}`
+
+  return `Serão desfeitas ${actions} de ${users} registradas depois de ${formatDateTime(target.createdAt)} na empresa ${app.currentCompany.tradeName}.`
+})
 
 function askRestore(entry: AuditEntry) {
   restoreTarget.value = entry
   restoreReason.value = ''
   restoreError.value = ''
+  restoreTyped.value = ''
   detailDialog.value = false
   restoreDialog.value = true
+  loadRestoreImpact(entry)
 }
 
 async function confirmRestore() {
-  if (!restoreTarget.value || !restoreReason.value.trim())
+  if (restoring.value || !restoreTarget.value || !restoreReason.value.trim() || !restoreWordOk.value)
     return
   restoring.value = true
   restoreError.value = ''
@@ -331,6 +398,27 @@ const jsonText = (value?: Record<string, unknown>) => value ? JSON.stringify(val
           </VCardSubtitle>
         </VCardItem>
         <VCardText>
+          <DialogCompanyContext class="mb-4" />
+          <VAlert
+            type="error"
+            variant="tonal"
+            class="mb-4"
+            role="status"
+            title="O que será desfeito"
+          >
+            <template v-if="restoreImpactText">
+              {{ restoreImpactText }}
+            </template>
+            <template v-else>
+              Calculando quantas ações serão desfeitas…
+            </template>
+            <VProgressLinear
+              v-if="restoreImpactLoading"
+              indeterminate
+              class="mt-2"
+              color="error"
+            />
+          </VAlert>
           <VAlert
             type="warning"
             variant="tonal"
@@ -344,6 +432,7 @@ const jsonText = (value?: Record<string, unknown>) => value ? JSON.stringify(val
             variant="tonal"
             density="compact"
             class="mb-4"
+            role="alert"
             :text="restoreError"
           />
           <VTextarea
@@ -352,6 +441,15 @@ const jsonText = (value?: Record<string, unknown>) => value ? JSON.stringify(val
             placeholder="Ex.: cadastro incorreto realizado por engano"
             rows="3"
             :rules="[requiredRule]"
+            :disabled="restoring"
+          />
+          <VTextField
+            v-model="restoreTyped"
+            class="mt-2"
+            :label="`Digite ${RESTORE_WORD} para confirmar`"
+            autocomplete="off"
+            :disabled="restoring"
+            @keydown.enter.prevent="confirmRestore"
           />
         </VCardText>
         <VCardText class="d-flex justify-end gap-3 pt-0">
@@ -361,13 +459,13 @@ const jsonText = (value?: Record<string, unknown>) => value ? JSON.stringify(val
             :disabled="restoring"
             @click="restoreDialog = false"
           >
-            Cancelar
+            Voltar
           </VBtn>
           <VBtn
             color="warning"
             prepend-icon="ri-history-line"
             :loading="restoring"
-            :disabled="!restoreReason.trim()"
+            :disabled="!restoreReason.trim() || !restoreWordOk"
             @click="confirmRestore"
           >
             Restaurar dados

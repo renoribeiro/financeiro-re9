@@ -27,7 +27,6 @@ const filtered = computed(() => {
 // 👉 Dialog
 const dialog = ref(false)
 const editing = ref<Development | null>(null)
-const actionError = ref('')
 
 function openNew() {
   editing.value = null
@@ -45,15 +44,11 @@ function askToggle(dv: Development) {
   target.value = dv
   confirm.value = true
 }
+
+// Erros aparecem dentro do diálogo de confirmação (ele só fecha no sucesso).
 async function doToggle() {
-  if (target.value) {
-    try {
-      await finance.toggleActive('developments', target.value.id)
-    }
-    catch (error) {
-      actionError.value = error instanceof Error ? error.message : 'Não foi possível alterar o empreendimento.'
-    }
-  }
+  if (target.value)
+    await finance.toggleActive('developments', target.value.id)
 }
 </script>
 
@@ -74,14 +69,6 @@ async function doToggle() {
         </VBtn>
       </template>
     </AppPageHeader>
-
-    <VAlert
-      v-if="actionError"
-      type="error"
-      variant="tonal"
-      class="mb-4"
-      :text="actionError"
-    />
 
     <VCard>
       <VCardText class="d-flex flex-wrap gap-4 align-center">
@@ -240,7 +227,9 @@ async function doToggle() {
       v-model="confirm"
       :title="target?.isActive ? 'Desativar empreendimento' : 'Ativar empreendimento'"
       :message="`Deseja ${target?.isActive ? 'desativar' : 'ativar'} ${target?.name}?`"
-      @confirm="doToggle"
+      :confirm-text="target?.isActive ? 'Desativar' : 'Ativar'"
+      :confirm-color="target?.isActive ? 'error' : 'primary'"
+      :action="doToggle"
     />
   </div>
 </template>

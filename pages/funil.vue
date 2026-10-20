@@ -113,9 +113,26 @@ const stageMetrics = computed(() => {
 const dialog = ref(false)
 const editing = ref<Partial<FunnelCard>>({})
 const devOptions = computed(() => finance.companyDevelopments.map(d => ({ title: d.name, value: d.id })))
+
+// corretores do diálogo: só ativos, mas mantém o atual (mesmo inativo) para não sumir do card
+const dialogBrokerOptions = computed(() =>
+  finance.companyEmployees
+    .filter(e => e.employmentType === 'commission_only' && (e.status === 'active' || e.id === editing.value.brokerId))
+    .map(e => ({ title: e.fullName, value: e.id })),
+)
+
+// somente leitura (ou card que o usuário não pode editar): abre em modo visualização
+const viewOnly = computed(() => !!editing.value.id && !canEditCard(editing.value as FunnelCard))
+
+const saving = ref(false)
+const dialogError = ref('')
+const guard = useDiscardGuard(() => editing.value)
+
 function openNew() {
   // corretor cria leads já atribuídos a si mesmo
   editing.value = { currentStage: 'lead', brokerId: app.isBroker ? ownBrokerId.value : undefined }
+  dialogError.value = ''
+  guard.arm()
   dialog.value = true
 }
 function openEdit(c: FunnelCard) {
@@ -123,19 +140,44 @@ function openEdit(c: FunnelCard) {
   if (app.isBroker && c.brokerId !== ownBrokerId.value)
     return
   editing.value = structuredClone(toRaw(c))
+  dialogError.value = ''
+  guard.arm()
   dialog.value = true
 }
-async function save() {
-  // lead exige ao menos o nome do contato
-  if (!editing.value.contactName?.trim())
+function closeDialog() {
+  if (saving.value)
     return
+  if (viewOnly.value) {
+    dialog.value = false
+
+    return
+  }
+  guard.requestClose(() => {
+    dialog.value = false
+  })
+}
+async function save() {
+  if (viewOnly.value || saving.value)
+    return
+
+  // lead exige ao menos o nome do contato
+  if (!editing.value.contactName?.trim()) {
+    dialogError.value = 'Informe o nome do contato.'
+
+    return
+  }
+  dialogError.value = ''
   actionError.value = ''
+  saving.value = true
   try {
     await finance.saveFunnelCard(editing.value)
     dialog.value = false
   }
   catch (error) {
-    actionError.value = error instanceof Error ? error.message : 'Não foi possível salvar o lead.'
+    dialogError.value = error instanceof Error ? error.message : 'Não foi possível salvar o lead.'
+  }
+  finally {
+    saving.value = false
   }
 }
 </script>
@@ -350,9 +392,18 @@ async function save() {
     >
       <VCard>
         <VCardItem>
-          <VCardTitle>{{ editing.id ? 'Editar lead' : 'Novo lead' }}</VCardTitle>
+          <VCardTitle>{{ viewOnly ? 'Detalhes do lead' : editing.id ? 'Editar lead' : 'Novo lead' }}</VCardTitle>
         </VCardItem>
         <VCardText>
+          <DialogCompanyContext class="mb-4" />
+          <VAlert
+            v-if="viewOnly"
+            type="info"
+            variant="tonal"
+            density="compact"
+            class="mb-4"
+            text="Modo visualização — você não tem permissão para alterar este lead."
+          />
           <VRow>
             <VCol
               cols="12"
@@ -361,6 +412,7 @@ async function save() {
               <VTextField
                 v-model="editing.contactName"
                 label="Nome do contato"
+                :readonly="viewOnly"
               />
             </VCol>
             <VCol
@@ -370,6 +422,7 @@ async function save() {
               <VTextField
                 v-model="editing.contactPhone"
                 label="Telefone"
+                :readonly="viewOnly"
               />
             </VCol>
             <VCol
@@ -380,7 +433,8 @@ async function save() {
                 v-model="editing.developmentId"
                 label="Empreendimento"
                 :items="devOptions"
-                clearable
+                :clearable="!viewOnly"
+                :readonly="viewOnly"
               />
             </VCol>
             <VCol
@@ -390,8 +444,10 @@ async function save() {
               <VSelect
                 v-model="editing.brokerId"
                 label="Corretor"
-                :items="brokerOptions"
-                clearable
+                :items="dialogBrokerOptions"
+                :clearable="!viewOnly && !app.isBroker"
+                :readonly="viewOnly"
+                :disabled="app.isBroker"
               />
             </VCol>
             <VCol
@@ -403,6 +459,7 @@ async function save() {
                 label="Valor estimado (R$)"
                 type="number"
                 prefix="R$"
+                :readonly="viewOnly"
               />
             </VCol>
             <VCol
@@ -413,6 +470,7 @@ async function save() {
                 v-model="editing.currentStage"
                 label="Estágio"
                 :items="funnelStages.map(s => ({ title: s.label, value: s.value }))"
+                :readonly="viewOnly"
               />
             </VCol>
             <VCol cols="12">
@@ -420,24 +478,50 @@ async function save() {
                 v-model="editing.notes"
                 label="Observações"
                 rows="2"
+                :readonly="viewOnly"
               />
             </VCol>
           </VRow>
+        </VCardText>
+        <VCardText
+          v-if="dialogError"
+          class="pt-0"
+        >
+          <VAlert
+            type="error"
+            variant="tonal"
+            density="compact"
+            role="alert"
+          >
+            {{ dialogError }}
+          </VAlert>
         </VCardText>
         <VCardText class="d-flex justify-end gap-3 pt-0">
           <VBtn
             variant="tonal"
             color="secondary"
-            @click="dialog = false"
+            :disabled="saving"
+            @click="closeDialog"
           >
-            Cancelar
+            {{ viewOnly ? 'Fechar' : 'Cancelar' }}
           </VBtn>
-          <VBtn @click="save">
+          <VBtn
+            v-if="!viewOnly"
+            :loading="saving"
+            :disabled="saving"
+            @click="save"
+          >
             Salvar
           </VBtn>
         </VCardText>
       </VCard>
     </VDialog>
+
+    <ConfirmDialog
+      v-model="guard.prompt.value"
+      v-bind="guard.dialogProps"
+      :action="guard.discard"
+    />
   </div>
 </template>
 

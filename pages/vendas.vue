@@ -90,6 +90,11 @@ const commission = ref<{
   totalAmount: 0,
 })
 
+const saleGuard = useDiscardGuard(() => ({ sale: editing.value, commission: commission.value }))
+
+// Status com que o formulário foi aberto (para avisar ao mudar para "Distratada").
+const originalStatus = ref<Sale['status'] | undefined>(undefined)
+
 const commissionTouched = ref(false)
 const saving = ref(false)
 const formError = ref('')
@@ -197,6 +202,8 @@ function openNew() {
     percentage: 0,
     totalAmount: 0,
   }
+  originalStatus.value = editing.value.status
+  saleGuard.arm()
   commissionTouched.value = false
   formError.value = ''
   dialog.value = true
@@ -215,6 +222,8 @@ function openEdit(s: Sale) {
     percentage: Number(s.commissionPercentage ?? 0),
     totalAmount: Number(s.commissionAmountOverride ?? existingCommission?.totalAmount ?? 0),
   }
+  originalStatus.value = s.status
+  saleGuard.arm()
   commissionTouched.value = true
   formError.value = ''
   detailsDialog.value = false
@@ -232,7 +241,34 @@ function selectCreatedDevelopment(development: Development) {
   quickDevelopmentDialog.value = false
 }
 
+function cancelSaleForm() {
+  if (saving.value)
+    return
+  saleGuard.requestClose(() => {
+    dialog.value = false
+  })
+}
+
+// 👉 Aviso ao distratar (C-25). Texto conferido no servidor:
+// save_sale_with_commission → private.save_sale_graph → private.cancel_commission_graph
+// (cancela comissão, parcelas, contas a receber e repasses; nada é apagado) e,
+// havendo movimentação financeira ou NFS-e, o servidor recusa o distrato.
+const cancellationNotice = computed(() => {
+  if (editing.value.status !== 'cancelled' || originalStatus.value === 'cancelled')
+    return null
+  if (!editing.value.id)
+    return 'Uma venda registrada como Distratada não gera comissão, parcelas nem contas a receber ou a pagar.'
+  if (!finance.commissionOfSale(editing.value.id))
+    return 'Esta venda não tem comissão gerada. Ao salvar como Distratada, nenhuma comissão será gerada.'
+  if (commissionHasFinancialHistory.value)
+    return 'A comissão desta venda já tem recebimento, pagamento ou NFS-e, e o sistema não permite distratá-la assim. Estorne/reabra esses lançamentos antes de salvar como Distratada.'
+
+  return 'Ao salvar como Distratada, a comissão desta venda será cancelada: as parcelas e as contas a receber da comissão ficam canceladas, as contas a pagar de repasse também, e as divisões pendentes deixam de valer. Nada é apagado; os registros continuam visíveis como cancelados.'
+})
+
 async function save() {
+  if (saving.value)
+    return
   const { valid } = await formRef.value.validate()
   if (!valid)
     return
@@ -289,24 +325,18 @@ function openDetails(s: Sale) {
 
 const deleteDialog = ref(false)
 const deleteTarget = ref<Sale | null>(null)
-const deleteError = ref('')
 
 function askDelete(s: Sale) {
   deleteTarget.value = s
-  deleteError.value = ''
   deleteDialog.value = true
 }
 
+// Erros sobem para o ConfirmDialog, que os mostra dentro dele.
 async function confirmDelete() {
   if (!deleteTarget.value)
     return
-  try {
-    await finance.deleteSale(deleteTarget.value.id)
-    deleteTarget.value = null
-  }
-  catch (error) {
-    deleteError.value = (error as Error).message
-  }
+  await finance.deleteSale(deleteTarget.value.id)
+  deleteTarget.value = null
 }
 </script>
 
@@ -496,6 +526,7 @@ async function confirmDelete() {
           <VCardTitle>{{ editing.id ? 'Editar venda' : 'Nova venda' }}</VCardTitle>
         </VCardItem>
         <VCardText>
+          <DialogCompanyContext class="mb-4" />
           <VForm
             ref="formRef"
             @submit.prevent="save"
@@ -506,6 +537,7 @@ async function confirmDelete() {
               variant="tonal"
               density="compact"
               class="mb-4"
+              role="alert"
               :text="formError"
             />
             <VAlert
@@ -642,6 +674,19 @@ async function confirmDelete() {
                   :items="statusOptions"
                 />
               </VCol>
+              <VCol
+                v-if="cancellationNotice"
+                cols="12"
+                class="pt-0"
+              >
+                <VAlert
+                  type="warning"
+                  variant="tonal"
+                  density="compact"
+                  title="Venda distratada"
+                  :text="cancellationNotice"
+                />
+              </VCol>
               <VCol cols="12">
                 <VDivider class="mb-2" />
                 <div class="text-overline mb-1">
@@ -738,7 +783,7 @@ async function confirmDelete() {
                   type="number"
                   min="1"
                   max="12"
-                  :readonly="commissionHasFinancialHistory"
+                  :readonly="!app.canManageFinance || commissionHasFinancialHistory"
                 />
               </VCol>
               <VCol
@@ -750,7 +795,7 @@ async function confirmDelete() {
                   label="% gerente (opcional)"
                   type="number"
                   suffix="%"
-                  :readonly="commissionHasFinancialHistory"
+                  :readonly="!app.canManageFinance || commissionHasFinancialHistory"
                 />
               </VCol>
               <VCol
@@ -762,7 +807,7 @@ async function confirmDelete() {
                   label="% captador (opcional)"
                   type="number"
                   suffix="%"
-                  :readonly="commissionHasFinancialHistory"
+                  :readonly="!app.canManageFinance || commissionHasFinancialHistory"
                 />
               </VCol>
               <VCol cols="12">
@@ -783,12 +828,14 @@ async function confirmDelete() {
           <VBtn
             variant="tonal"
             color="secondary"
-            @click="dialog = false"
+            :disabled="saving"
+            @click="cancelSaleForm"
           >
             Cancelar
           </VBtn>
           <VBtn
             :loading="saving"
+            :disabled="saving"
             @click="save"
           >
             Salvar
@@ -796,6 +843,12 @@ async function confirmDelete() {
         </VCardText>
       </VCard>
     </VDialog>
+
+    <ConfirmDialog
+      v-model="saleGuard.prompt.value"
+      v-bind="saleGuard.dialogProps"
+      :action="saleGuard.discard"
+    />
 
     <CommercialDevelopmentFormDialog
       v-model="quickDevelopmentDialog"
@@ -1007,22 +1060,13 @@ async function confirmDelete() {
       </VCard>
     </VDialog>
 
-    <VAlert
-      v-if="deleteError"
-      type="error"
-      variant="tonal"
-      closable
-      class="mt-4"
-      :text="deleteError"
-      @click:close="deleteError = ''"
-    />
     <ConfirmDialog
       v-model="deleteDialog"
       title="Excluir venda"
       confirm-text="Excluir"
       confirm-color="error"
       :message="`A venda de '${deleteTarget?.buyerName}' e sua comissão/contas ainda não liquidadas serão removidas. Registros com recebimentos ou pagamentos exigem estorno prévio. Deseja continuar?`"
-      @confirm="confirmDelete"
+      :action="confirmDelete"
     />
   </div>
 </template>

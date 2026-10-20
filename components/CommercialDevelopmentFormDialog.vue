@@ -18,6 +18,7 @@ const formRef = ref()
 const editing = ref<Partial<Development>>(createDevelopmentDraft())
 const saving = ref(false)
 const formError = ref('')
+const guard = useDiscardGuard(() => editing.value)
 
 const typeOptions = Object.entries(developmentTypeLabels).map(([value, title]) => ({ title, value }))
 
@@ -46,6 +47,7 @@ const commissionHint = computed(() => {
 function resetForm() {
   editing.value = createDevelopmentDraft(props.development)
   formError.value = ''
+  guard.arm()
   nextTick(() => formRef.value?.resetValidation())
 }
 
@@ -61,10 +63,12 @@ watch(() => props.development, () => {
 
 function close() {
   if (!saving.value)
-    open.value = false
+    guard.requestClose(() => { open.value = false })
 }
 
 async function save() {
+  if (saving.value)
+    return
   const { valid } = await formRef.value.validate()
   if (!valid)
     return
@@ -100,6 +104,7 @@ async function save() {
       </VCardItem>
 
       <VCardText>
+        <DialogCompanyContext class="mb-4" />
         <VForm
           ref="formRef"
           @submit.prevent="save"
@@ -110,6 +115,7 @@ async function save() {
             variant="tonal"
             density="compact"
             class="mb-4"
+            role="alert"
             :text="formError"
           />
 
@@ -210,11 +216,18 @@ async function save() {
         </VBtn>
         <VBtn
           :loading="saving"
+          :disabled="saving"
           @click="save"
         >
           Salvar
         </VBtn>
       </VCardText>
+
+      <ConfirmDialog
+        v-model="guard.prompt.value"
+        v-bind="guard.dialogProps"
+        :action="guard.discard"
+      />
     </VCard>
   </VDialog>
 </template>
