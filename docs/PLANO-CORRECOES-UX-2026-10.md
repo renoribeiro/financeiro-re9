@@ -58,6 +58,18 @@ Até as correções do Lote 2 entrarem no ar:
 
 ---
 
+### Resultado da Etapa 0 (executada em 2026-10-19)
+
+| Passo | Situação | Resultado |
+|---|---|---|
+| 0.1 | ✅ Feito | O trabalho local pendente e os documentos foram commitados e enviados ao GitHub (ramo `codex/development-defaults-quick-create`, commit `3d16f85`). Antes, conferi que não há senhas nos arquivos e que todos os testes passam. Esse ramo não publica o sistema: só a `main` publica. |
+| 0.2 | ✅ Verificado | **O plano do Supabase é o gratuito, que não tem backup automático nem PITR.** Os backups manuais deste plano são a única proteção. Por isso: (a) a trava T2 (backup manual antes de cada deploy) é **obrigatória e não pode ser pulada**; (b) recomendação de rotina: um backup manual por semana, mesmo sem deploy, sempre com uma cópia fora do computador (ex.: Google Drive). |
+| 0.3 | ✅ Feito | Os arquivos `schema.sql`, `data.sql` e `roles.sql` estão em `Documents\backups-re9\2026-10-19`, cada um terminando com a marca de "dump complete". A impressão digital de cada arquivo está em `impressao-digital.sha256`. **O backup foi restaurado com sucesso numa cópia isolada:** nas 19 tabelas com dados, a cópia tem exatamente o mesmo número de registros que o arquivo. A cópia simples não tem as tabelas internas de login e de arquivos (`auth`, `storage`), que serão montadas no passo 0.6. |
+| 0.4 | ✅ Feito | A fotografia (registros e somas de todas as colunas numéricas de todas as tabelas) está em `fotografia-2026-10-19.csv`. Principais números: 214 contas a pagar (R$ 561.335,90), 47 contas a receber (R$ 636.532,54), 242 lançamentos (R$ 1.059.227,41) e 29 vendas (R$ 14.432.436,29). As somas de lançamentos e de baixas são iguais, o que indica consistência. |
+| 0.5 | ✅ Verificado | **Hoje nenhum dado está escondido.** Todas as tabelas financeiras têm menos de 1.000 registros (a maior, de baixas e lançamentos, tem 242). A única com mais é o Histórico (3.164), que já carrega de propósito só os 1.000 mais recentes. No ritmo atual, cerca de 46 lançamentos por mês, o limite seria atingido em mais ou menos 16 meses. A correção (F-16) continua no plano, mas **não é urgente**. |
+| 0.6 | 🟡 Parcial | A cópia local isolada (contêiner `re9-copia-local`, acessível só deste computador) já tem todos os dados financeiros. Para testar as telas falta montar o login e o armazenamento, com as integrações desligadas. Isso será feito antes do Lote 1. |
+| 0.7 | ✅ Feito | **Nenhum registro antigo foi danificado pelos defeitos.** (a) Nenhuma conta foi criada pelo "Parcelar". (b) Nenhum recebimento caiu na data errada: nenhuma baixa tem horário entre 0h e 3h. Sete recebimentos de ago–set têm horários de tarde ou noite, que podem estar adiantados em 3h, mas a **data está certa**, e só a data entra nos relatórios. (c) Não há sinal de uso do Importador. O único lote de inclusões em massa (15 contas em 05/10, 15h29) coincide com a sincronização oficial "Financeiro V2". |
+
 ## 4. Como cada correção é classificada
 
 | Tipo | Significado | Como é testado |
