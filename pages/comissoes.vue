@@ -2,12 +2,14 @@
 import { useFinanceStore } from '@/stores/finance'
 import { useAppStore } from '@/stores/app'
 import { type DateWindow, isWithin } from '@/utils/dateFilter'
-import type { Commission } from '@/types/finance'
+import type { Commission, CommissionInstallment, ReceiptMethod } from '@/types/finance'
 
 const finance = useFinanceStore()
 const app = useAppStore()
 
 useHead({ title: 'Comissões' })
+
+const reversedReceipts = computed(() => new Set(finance.companySettlements.map(s => s.reversalOf).filter(Boolean)))
 
 const rows = computed(() => finance.companyCommissions.map(c => {
   const sale = finance.saleById(c.saleId)
@@ -21,7 +23,9 @@ const rows = computed(() => finance.companyCommissions.map(c => {
 
   const receivedDates = [...new Set(insts.flatMap(installment => {
     const settlementDates = installment.receivableId
-      ? finance.receiptsOf(installment.receivableId).map(receipt => receipt.settledAt)
+      ? finance.receiptsOf(installment.receivableId)
+        .filter(receipt => receipt.type === 'receipt' && !reversedReceipts.value.has(receipt.id))
+        .map(receipt => receipt.settledAt.slice(0, 10))
       : []
 
     return [...settlementDates, ...(installment.receivedDate ? [installment.receivedDate] : [])]
@@ -90,10 +94,6 @@ function openDetail(c: Commission) {
   dialog.value = true
 }
 
-// 👉 Receber parcela / pagar repasse — sempre com confirmação.
-// A gravação é a mesma de antes (receiveReceivable / payPayable sem opções):
-// o store liquida todo o saldo em aberto, com data de agora; no recebimento a
-// forma é Pix (padrão do store) e no repasse nenhuma forma é informada.
 const busyId = ref<string | null>(null)
 const confirmDateLabel = ref('')
 
@@ -108,27 +108,70 @@ function prepareConfirmDate() {
 }
 
 const receiveConfirm = ref(false)
-const receiveTarget = ref<{ receivableId: string; installmentNumber: number } | null>(null)
+const receiveTarget = ref<CommissionInstallment | null>(null)
+const receiptMethods = Object.entries(receiptMethodLabels).map(([value, title]) => ({ value, title }))
 
-const receiveInfo = computed(() => {
-  const id = receiveTarget.value?.receivableId
-  const receivable = id ? finance.receivables.find(item => item.id === id) : undefined
-  if (!receivable)
-    return null
-
-  return {
-    amount: Math.max(0, receivable.amount - (receivable.receivedAmount ?? 0)),
-    payer: receivable.clientName || '—',
-    emitsInvoice: receivable.invoiceRule === 'on_receive',
-  }
+const receiveForm = ref({
+  source: 'new',
+  existingId: '',
+  outcome: 'final',
+  amount: 0,
+  remaining: '' as string | number,
+  date: '',
+  method: 'pix' as ReceiptMethod,
+  account: '',
+  paidByBuilder: false,
+  reason: '',
+  requestId: '',
+  expectedUpdatedAt: undefined as string | undefined,
 })
 
-// Só oferece "Receber" quando a conta vinculada ainda pode receber baixa (o
-// servidor recusa contas canceladas ou já quitadas).
-function canSettleReceivable(receivableId: string) {
-  const receivable = finance.receivables.find(r => r.id === receivableId)
+const receiveAccount = computed(() => finance.companyReceivables.find(r => r.id === receiveTarget.value?.receivableId))
+const receiveBroker = computed(() => finance.splitsOf(receiveTarget.value?.commissionId ?? '').find(s => s.beneficiaryType === 'broker'))
+const currentBalance = computed(() => receiveAccount.value ? receivableOutstanding(receiveAccount.value) : 0)
 
-  return !receivable || isReceivablePending(receivable)
+const existingReceipts = computed(() => {
+  const account = receiveAccount.value
+  if (!account)
+    return []
+  const accounts = new Map(finance.companyReceivables.map(r => [r.id, r]))
+  const transactions = new Map(finance.companyTransactions.filter(t => t.settlementId).map(t => [t.settlementId, t]))
+  const linked = new Set(finance.commissionInstallments.map(i => i.receivableId))
+
+  return finance.companySettlements.flatMap(s => {
+    const source = s.receivableId ? accounts.get(s.receivableId) : undefined
+    const transaction = transactions.get(s.id)
+    if (s.type !== 'receipt' || !source || reversedReceipts.value.has(s.id) || !transaction || transaction.isReversal)
+      return []
+    const sameAccount = source.id === account.id
+    if (!sameAccount && (account.status === 'received' || source.status !== 'received' || source.saleId
+      || source.commissionInstallmentId || linked.has(source.id) || source.amount !== s.amount
+      || source.receivedAmount !== s.amount || finance.companyInvoices.some(i => i.receivableId === source.id && i.status !== 'cancelled')))
+      return []
+
+    return [{
+      value: s.id,
+      title: [formatDate(transaction.date), formatBRL(s.amount), source.description, s.account].filter(Boolean).join(' · '),
+      amount: s.amount,
+      sameAccount,
+    }]
+  })
+})
+
+const selectedReceipt = computed(() => existingReceipts.value.find(s => s.value === receiveForm.value.existingId))
+const actualAmount = computed(() => receiveForm.value.source === 'existing' ? selectedReceipt.value?.amount ?? 0 : Number(receiveForm.value.amount))
+
+const suggestedRemaining = computed(() => Math.max(0, Math.round((currentBalance.value
+  - (receiveForm.value.source === 'existing' && selectedReceipt.value?.sameAccount ? 0 : actualAmount.value)) * 100) / 100))
+
+const needsReceiptReason = computed(() => receiveForm.value.source === 'existing'
+  || receiveForm.value.outcome === 'partial' || Math.round(actualAmount.value * 100) !== Math.round(currentBalance.value * 100))
+
+function canRecordReceipt(installment: CommissionInstallment) {
+  const receivable = finance.companyReceivables.find(r => r.id === installment.receivableId)
+
+  return receivable && installment.status !== 'cancelled'
+    && (isReceivablePending(receivable) || (receivable.status === 'received' && finance.receiptsOf(receivable.id).length > 0))
 }
 
 function canSettlePayable(payableId: string) {
@@ -137,21 +180,64 @@ function canSettlePayable(payableId: string) {
   return !payable || isPayablePending(payable)
 }
 
-function askReceive(receivableId: string | undefined, installmentNumber: number) {
-  if (!receivableId || busyId.value)
+function askReceive(installment: CommissionInstallment) {
+  if (!canRecordReceipt(installment) || busyId.value)
     return
-  receiveTarget.value = { receivableId, installmentNumber }
-  prepareConfirmDate()
+  receiveTarget.value = installment
+  receiveForm.value = {
+    source: receiveAccount.value?.status === 'received' ? 'existing' : 'new',
+    existingId: '',
+    outcome: 'final',
+    amount: currentBalance.value,
+    remaining: '',
+    date: todayISO(),
+    method: 'pix',
+    account: '',
+    paidByBuilder: receiveBroker.value?.paidByBuilder ?? false,
+    reason: '',
+    requestId: crypto.randomUUID(),
+    expectedUpdatedAt: receiveAccount.value?.updatedAt,
+  }
   receiveConfirm.value = true
 }
 
 async function confirmReceive() {
-  const receivableId = receiveTarget.value?.receivableId
-  if (!receivableId)
-    return
-  busyId.value = receivableId
+  const target = receiveTarget.value
+  const form = receiveForm.value
+  const usingExisting = form.source === 'existing'
+
+  const remaining = form.outcome === 'partial'
+    ? Number(form.remaining === '' ? suggestedRemaining.value : form.remaining)
+    : 0
+
+  if (!target?.receivableId || !receiveAccount.value)
+    throw new Error('Selecione uma parcela com conta vinculada.')
+  if (usingExisting && !selectedReceipt.value)
+    throw new Error('Selecione o recebimento já lançado.')
+  if (!Number.isFinite(actualAmount.value) || actualAmount.value <= 0)
+    throw new Error('Informe o valor efetivamente recebido.')
+  if (form.outcome === 'partial' && (!Number.isFinite(remaining) || remaining <= 0))
+    throw new Error('Informe quanto ainda falta a RE9 receber.')
+  if (!usingExisting && (!form.date || form.date > todayISO()))
+    throw new Error('Informe a data do depósito, até hoje.')
+  if (needsReceiptReason.value && !form.reason.trim())
+    throw new Error('Informe o motivo da diferença ou do vínculo.')
+
+  busyId.value = target.receivableId
   try {
-    await finance.receiveReceivable(receivableId)
+    await finance.recordCommissionReceipt({
+      installmentId: target.id,
+      amount: usingExisting ? undefined : actualAmount.value,
+      remaining,
+      date: usingExisting ? undefined : form.date,
+      method: usingExisting ? undefined : form.method,
+      account: usingExisting ? undefined : form.account,
+      existingReceiptId: usingExisting ? form.existingId : undefined,
+      paidByBuilder: form.paidByBuilder,
+      reason: form.reason.trim(),
+      requestId: form.requestId,
+      expectedUpdatedAt: form.expectedUpdatedAt,
+    })
   }
   finally {
     busyId.value = null
@@ -549,9 +635,9 @@ async function confirmDelete() {
             <thead>
               <tr>
                 <th>#</th>
-                <th>Valor</th>
-                <th>Previsto</th>
-                <th>Recebido</th>
+                <th>Valor previsto</th>
+                <th>Vencimento</th>
+                <th>Recebido em</th>
                 <th>Status</th>
                 <th />
               </tr>
@@ -564,7 +650,15 @@ async function confirmDelete() {
                 <td>{{ inst.installmentNumber }}</td>
                 <td>{{ formatBRL(inst.amount) }}</td>
                 <td>{{ formatDate(inst.expectedDate) }}</td>
-                <td>{{ formatDate(inst.receivedDate) }}</td>
+                <td>
+                  {{ formatDate(inst.receivedDate) }}
+                  <div
+                    v-if="inst.receivableId"
+                    class="text-caption"
+                  >
+                    {{ formatBRL(finance.companyReceivables.find(r => r.id === inst.receivableId)?.receivedAmount) }}
+                  </div>
+                </td>
                 <td>
                   <StatusChip
                     :value="inst.status"
@@ -573,15 +667,15 @@ async function confirmDelete() {
                 </td>
                 <td class="text-end">
                   <VBtn
-                    v-if="app.canManageFinance && inst.status !== 'received' && inst.receivableId && canSettleReceivable(inst.receivableId)"
+                    v-if="app.canManageFinance && canRecordReceipt(inst)"
                     size="x-small"
                     color="success"
                     variant="tonal"
                     :loading="busyId === inst.receivableId"
                     :disabled="busyId !== null"
-                    @click="askReceive(inst.receivableId, inst.installmentNumber)"
+                    @click="askReceive(inst)"
                   >
-                    Receber
+                    {{ inst.status === 'received' ? 'Conciliar' : 'Receber' }}
                   </VBtn>
                 </td>
               </tr>
@@ -617,9 +711,18 @@ async function confirmDelete() {
                 <td>{{ formatBRL(sp.amount) }}</td>
                 <td>
                   <StatusChip
+                    v-if="!sp.paidByBuilder"
                     :value="sp.status"
                     :map="splitStatusMeta"
                   />
+                  <VChip
+                    v-else
+                    color="success"
+                    size="small"
+                    variant="tonal"
+                  >
+                    Pago pela construtora
+                  </VChip>
                 </td>
                 <td class="text-end">
                   <VBtn
@@ -803,43 +906,107 @@ async function confirmDelete() {
     <!-- Confirmação: receber parcela da comissão -->
     <ConfirmDialog
       v-model="receiveConfirm"
-      title="Confirmar recebimento"
-      confirm-text="Confirmar recebimento"
+      title="Registrar recebimento da comissão"
+      confirm-text="Salvar recebimento"
       confirm-color="success"
       :action="confirmReceive"
     >
       <DialogCompanyContext class="mb-4" />
-      <template v-if="receiveInfo">
-        <div class="mb-2">
-          Será registrado o recebimento da parcela {{ receiveTarget?.installmentNumber }} da comissão:
-        </div>
-        <div>Valor: <strong>{{ formatBRL(receiveInfo.amount) }}</strong> (todo o saldo em aberto da parcela)</div>
-        <div>Data no caixa: <strong>{{ confirmDateLabel }}</strong></div>
-        <VAlert
-          v-if="confirmDateShifted"
-          type="warning"
-          variant="tonal"
-          density="compact"
-          class="my-2"
+      <template v-if="receiveAccount">
+        <p class="mb-4">
+          Parcela {{ receiveTarget?.installmentNumber }} · saldo previsto atual de <strong>{{ formatBRL(currentBalance) }}</strong>
+        </p>
+        <VSelect
+          v-model="receiveForm.source"
+          label="Origem do recebimento"
+          :disabled="receiveAccount.status === 'received'"
+          :items="[{ title: 'Registrar novo depósito', value: 'new' }, { title: 'Vincular depósito já lançado', value: 'existing' }]"
+        />
+        <VAutocomplete
+          v-if="receiveForm.source === 'existing'"
+          v-model="receiveForm.existingId"
+          label="Recebimento já lançado"
+          :items="existingReceipts"
+          no-data-text="Nenhum recebimento elegível"
+          hint="Confira valor, data e descrição. A entrada existente será vinculada à parcela."
+          persistent-hint
+        />
+        <template v-else>
+          <VTextField
+            v-model.number="receiveForm.amount"
+            label="Valor que entrou na conta da RE9 (R$)"
+            type="number"
+            min="0.01"
+            step="0.01"
+          />
+          <VTextField
+            v-model="receiveForm.date"
+            label="Data do depósito"
+            type="date"
+            :max="todayISO()"
+          />
+          <VSelect
+            v-model="receiveForm.method"
+            label="Forma de recebimento"
+            :items="receiptMethods"
+          />
+          <VTextField
+            v-model="receiveForm.account"
+            label="Conta bancária da RE9 (opcional)"
+          />
+        </template>
+        <p
+          v-if="receiveForm.source === 'existing' && selectedReceipt && !selectedReceipt.sameAccount"
+          class="text-caption mb-4"
         >
-          Depois das 21h o sistema registra no caixa a data do dia seguinte (correção prevista). Se preferir, faça esta baixa amanhã.
-        </VAlert>
-        <div>Forma de recebimento: <strong>Pix</strong></div>
-        <div>Quem paga: <strong>{{ receiveInfo.payer }}</strong></div>
-        <div>Quem recebe: <strong>{{ app.currentCompany.tradeName }}</strong></div>
+          O título avulso será encerrado e a entrada que já está no caixa passará a identificar esta parcela.
+        </p>
+        <VSelect
+          v-model="receiveForm.outcome"
+          label="Situação da parcela"
+          :disabled="receiveAccount.status === 'received'"
+          :items="[{ title: 'Recebimento final · quitar parcela', value: 'final' }, { title: 'Recebimento parcial · deixar saldo em aberto', value: 'partial' }]"
+        />
+        <VTextField
+          v-if="receiveForm.outcome === 'partial'"
+          v-model.number="receiveForm.remaining"
+          label="Valor que a RE9 ainda espera receber (R$)"
+          type="number"
+          min="0.01"
+          step="0.01"
+          :placeholder="suggestedRemaining > 0 ? String(suggestedRemaining) : undefined"
+        />
+        <VCheckbox
+          v-if="receiveBroker"
+          v-model="receiveForm.paidByBuilder"
+          :disabled="receiveBroker.paidByBuilder"
+          label="A construtora já pagou o corretor diretamente"
+          hide-details
+          class="mb-2"
+        />
+        <p
+          v-if="receiveForm.paidByBuilder && !receiveBroker?.paidByBuilder"
+          class="text-caption mb-3"
+        >
+          O repasse em aberto da RE9 será cancelado. Se houver histórico de pagamento pela RE9, o caso precisa de revisão manual.
+        </p>
+        <VTextarea
+          v-if="needsReceiptReason"
+          v-model="receiveForm.reason"
+          label="Motivo do ajuste ou vínculo"
+          rows="2"
+          required
+        />
         <VAlert
-          v-if="receiveInfo.emitsInvoice"
+          v-if="receiveForm.source === 'new' && receiveForm.outcome === 'final' && receiveAccount.invoiceRule === 'on_receive'"
           type="info"
           variant="tonal"
           density="compact"
           class="mt-4"
         >
-          Esta conta está configurada para emitir NFS-e ao receber: a emissão da nota será iniciada automaticamente após a confirmação.
+          Esta conta está configurada para gerar uma NFS-e pendente na baixa final.
         </VAlert>
       </template>
-      <div v-else>
-        Confirma o recebimento desta parcela da comissão?
-      </div>
     </ConfirmDialog>
 
     <!-- Confirmação: pagar repasse -->

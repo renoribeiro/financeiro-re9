@@ -121,6 +121,8 @@ const payableById = computed(() => {
 })
 
 function payoutOf(split: CommissionSplit): { state: PayoutState; text: string } {
+  if (split.paidByBuilder)
+    return { state: 'paid', text: 'Pago diretamente pela construtora' }
   const payable = split.payableId ? payableById.value.get(split.payableId) : undefined
 
   if (payable) {

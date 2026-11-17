@@ -2,6 +2,7 @@ import type {
   AppNotification,
   ChartAccount,
   Client,
+  CommissionReceiptInput,
   CostCenter,
   Development,
   Employee,
@@ -370,6 +371,27 @@ export function useDb() {
         proof: receipt.proofUrl,
         request_key: receipt.requestId,
         settlement_note: receipt.notes,
+      })
+
+      if (error)
+        throw new Error(error.message)
+
+      return camelize(data as Record<string, unknown>) as unknown as Receivable
+    },
+
+    async recordCommissionReceipt(input: CommissionReceiptInput) {
+      const { data, error } = await db.rpc('record_commission_receipt', {
+        p_installment: input.installmentId,
+        p_amount: input.amount ?? null,
+        p_remaining: input.remaining,
+        p_date: input.date ?? null,
+        p_method: input.method ?? null,
+        p_account: input.account ?? null,
+        p_existing: input.existingReceiptId ?? null,
+        p_paid_by_builder: input.paidByBuilder,
+        p_reason: input.reason,
+        p_request: input.requestId,
+        p_expected_updated_at: input.expectedUpdatedAt ?? null,
       })
 
       if (error)

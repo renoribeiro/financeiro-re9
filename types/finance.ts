@@ -255,6 +255,20 @@ export interface ReceiptInput {
   requestId: string
 }
 
+export interface CommissionReceiptInput {
+  installmentId: string
+  amount?: number
+  remaining: number
+  date?: string
+  method?: ReceiptMethod
+  account?: string
+  existingReceiptId?: string
+  paidByBuilder: boolean
+  reason: string
+  requestId: string
+  expectedUpdatedAt?: string
+}
+
 export interface ExternalInvoiceInput {
   number: string
   issuedAt: string
@@ -374,6 +388,7 @@ export interface CommissionSplit {
   percentage: number
   amount: number
   payableId?: string
+  paidByBuilder?: boolean | null
   status: SplitStatus
 }
 

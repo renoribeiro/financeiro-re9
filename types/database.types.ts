@@ -25,9 +25,9 @@ export interface Database {
         Relationships: []
       }
       commission_splits: {
-        Row: { amount: number; beneficiary_id: string | null; beneficiary_type: string | null; commission_id: string; id: string; payable_id: string | null; percentage: number | null; status: string }
-        Insert: { amount?: number; beneficiary_id?: string | null; beneficiary_type?: string | null; commission_id: string; id?: string; payable_id?: string | null; percentage?: number | null; status?: string }
-        Update: { amount?: number; beneficiary_id?: string | null; beneficiary_type?: string | null; commission_id?: string; id?: string; payable_id?: string | null; percentage?: number | null; status?: string }
+        Row: { amount: number; beneficiary_id: string | null; beneficiary_type: string | null; commission_id: string; id: string; payable_id: string | null; paid_by_builder: boolean | null; percentage: number | null; status: string }
+        Insert: { amount?: number; beneficiary_id?: string | null; beneficiary_type?: string | null; commission_id: string; id?: string; payable_id?: string | null; paid_by_builder?: boolean | null; percentage?: number | null; status?: string }
+        Update: { amount?: number; beneficiary_id?: string | null; beneficiary_type?: string | null; commission_id?: string; id?: string; payable_id?: string | null; paid_by_builder?: boolean | null; percentage?: number | null; status?: string }
         Relationships: []
       }
       commissions: {

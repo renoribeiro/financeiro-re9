@@ -7,6 +7,7 @@ import type {
   Client,
   Commission,
   CommissionInstallment,
+  CommissionReceiptInput,
   CommissionSplit,
   CostCenter,
   Development,
@@ -723,6 +724,20 @@ export const useFinanceStore = defineStore('finance', {
       this.logAudit('receive', 'receivable', `Recebimento: ${r.description} — ${formatBRL(amount)}`, r.id)
 
       return saved
+    },
+
+    async recordCommissionReceipt(input: CommissionReceiptInput) {
+      if (!this.canWrite())
+        throw new Error('Seu perfil não pode registrar este recebimento.')
+
+      const saved = await useDb().recordCommissionReceipt(input)
+      const refreshed = await loadAppData()
+      if (!refreshed)
+        throw new Error('Recebimento registrado. Atualize os dados para conferir a baixa.')
+
+      this.hydrate(refreshed.finance)
+      if (!input.existingReceiptId && saved.status === 'received' && saved.invoiceRule === 'on_receive')
+        await this.createInvoiceFromReceivable(saved.id, false)
     },
 
     async reverseReceivableSettlement(settlementId: string, reason: string) {
