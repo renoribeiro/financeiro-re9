@@ -4,6 +4,8 @@ import vuetify from 'vite-plugin-vuetify'
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
+  srcDir: '.',
+
   app: {
     head: {
       titleTemplate: '%s · RE9 Finanças',
@@ -60,6 +62,7 @@ export default defineNuxtConfig({
   typescript: {
     tsConfig: {
       compilerOptions: {
+        noUncheckedIndexedAccess: false,
         paths: {
           '@/*': ['../*'],
           '@layouts/*': ['../@layouts/*'],

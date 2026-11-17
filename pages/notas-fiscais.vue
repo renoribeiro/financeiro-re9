@@ -89,14 +89,16 @@ const actionError = ref('')
  * Executa a operação fiscal (mesma chamada do store de antes) e lança erro se
  * ela falhar. Usada pelos diálogos de confirmação, que mostram o erro dentro.
  */
-async function executeInvoiceAction(inv: Invoice, action: () => Promise<unknown>) {
+async function executeInvoiceAction<T>(inv: Invoice, action: () => Promise<T>) {
   actionLoadingId.value = inv.id
   actionMessage.value = ''
   actionError.value = ''
   try {
-    await action()
+    const result = await action()
     if (inv.status === 'error')
       throw new Error(inv.errorMessage || 'A operação fiscal não foi concluída.')
+
+    return result
   }
   finally {
     actionLoadingId.value = ''
@@ -148,17 +150,17 @@ async function doIssue() {
   if (inv.status !== expected)
     throw new Error('A situação desta nota mudou. Volte e confira a situação dela na lista.')
 
-  await executeInvoiceAction(inv, () => issueMode.value === 'resend'
+  const updated = await executeInvoiceAction(inv, () => issueMode.value === 'resend'
     ? finance.retryInvoice(inv.id)
-    : finance.issueInvoice(inv.id))
+    : finance.issueInvoice(inv.id)) ?? inv
 
   // A mensagem segue a situação real da nota depois da resposta da prefeitura.
-  if (inv.status === 'issued')
-    actionMessage.value = inv.invoiceNumber ? `NFS-e ${inv.invoiceNumber} emitida.` : 'NFS-e emitida.'
-  else if (inv.status === 'processing')
+  if (updated.status === 'issued')
+    actionMessage.value = updated.invoiceNumber ? `NFS-e ${updated.invoiceNumber} emitida.` : 'NFS-e emitida.'
+  else if (updated.status === 'processing')
     actionMessage.value = 'Enviada para a prefeitura — aguardando processamento.'
   else
-    throw new Error(inv.errorMessage || 'A NFS-e não foi emitida. Confira a situação dela na lista.')
+    throw new Error(updated.errorMessage || 'A NFS-e não foi emitida. Confira a situação dela na lista.')
 }
 
 // 👉 Cancelar (confirmação)
@@ -175,9 +177,9 @@ async function doCancel() {
   if (invoice.status !== 'issued')
     throw new Error('Esta nota não está mais emitida. Volte e confira a situação dela na lista.')
 
-  await executeInvoiceAction(invoice, () => finance.cancelInvoice(invoice.id))
-  if (invoice.status !== 'cancelled')
-    throw new Error(invoice.errorMessage || 'A NFS-e não foi cancelada.')
+  const updated = await executeInvoiceAction(invoice, () => finance.cancelInvoice(invoice.id)) ?? invoice
+  if (updated.status !== 'cancelled')
+    throw new Error(updated.errorMessage || 'A NFS-e não foi cancelada.')
   actionMessage.value = 'NFS-e cancelada com sucesso.'
 }
 </script>
